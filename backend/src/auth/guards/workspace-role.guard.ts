@@ -10,9 +10,11 @@ import { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ROLES_KEY, Role } from '../decorators/roles.decorator';
 import { CurrentUserPayload } from '../decorators/current-user.decorator';
+import { Workspace } from '../../../generated/prisma/client';
 
 interface AuthenticatedRequest extends Request {
   user?: CurrentUserPayload;
+  workspace?: Workspace;
 }
 
 @Injectable()
@@ -41,12 +43,16 @@ export class WorkspaceRoleGuard implements CanActivate {
     }
 
     // 3. Query WorkspaceMember table to verify the requesting user is a member
+    // and include the associated Workspace entity.
     const member = await this.prisma.workspaceMember.findUnique({
       where: {
         workspaceId_userId: {
           workspaceId,
           userId: user.userId,
         },
+      },
+      include: {
+        workspace: true,
       },
     });
 
@@ -55,6 +61,9 @@ export class WorkspaceRoleGuard implements CanActivate {
         'Access denied: not a member of this workspace',
       );
     }
+
+    // Attach resolved Workspace entity to the request context
+    request.workspace = member.workspace;
 
     // 4. Retrieve roles metadata from handler/class
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [

@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import {
   ExecutionContext,
   ForbiddenException,
@@ -75,6 +78,9 @@ describe('WorkspaceRoleGuard', () => {
           userId: 'user-456',
         },
       },
+      include: {
+        workspace: true,
+      },
     });
   });
 
@@ -83,17 +89,29 @@ describe('WorkspaceRoleGuard', () => {
       { workspaceId: 'ws-123' },
       { userId: 'user-456' },
     );
+    const mockWorkspace = {
+      id: 'ws-123',
+      name: 'Test Workspace',
+      description: null,
+      organizationId: 'org-456',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     jest.spyOn(prisma.workspaceMember, 'findUnique').mockResolvedValue({
       id: 'member-789',
       workspaceId: 'ws-123',
       userId: 'user-456',
       role: 'MEMBER',
       joinedAt: new Date(),
-    });
+      workspace: mockWorkspace,
+    } as any);
     reflector.getAllAndOverride.mockReturnValue(undefined);
 
     const result = await guard.canActivate(context);
     expect(result).toBe(true);
+
+    const request = context.switchToHttp().getRequest<any>();
+    expect(request.workspace).toEqual(mockWorkspace);
   });
 
   it('should throw ForbiddenException if user role does not match required roles', async () => {
@@ -101,18 +119,30 @@ describe('WorkspaceRoleGuard', () => {
       { workspaceId: 'ws-123' },
       { userId: 'user-456' },
     );
+    const mockWorkspace = {
+      id: 'ws-123',
+      name: 'Test Workspace',
+      description: null,
+      organizationId: 'org-456',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     jest.spyOn(prisma.workspaceMember, 'findUnique').mockResolvedValue({
       id: 'member-789',
       workspaceId: 'ws-123',
       userId: 'user-456',
       role: 'VIEWER',
       joinedAt: new Date(),
-    });
+      workspace: mockWorkspace,
+    } as any);
     reflector.getAllAndOverride.mockReturnValue([Role.OWNER, Role.ADMIN]);
 
     await expect(guard.canActivate(context)).rejects.toThrow(
       new ForbiddenException('Access denied: insufficient permissions'),
     );
+
+    const request = context.switchToHttp().getRequest<any>();
+    expect(request.workspace).toEqual(mockWorkspace);
   });
 
   it('should return true if user role matches one of the required roles', async () => {
@@ -120,16 +150,28 @@ describe('WorkspaceRoleGuard', () => {
       { workspaceId: 'ws-123' },
       { userId: 'user-456' },
     );
+    const mockWorkspace = {
+      id: 'ws-123',
+      name: 'Test Workspace',
+      description: null,
+      organizationId: 'org-456',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     jest.spyOn(prisma.workspaceMember, 'findUnique').mockResolvedValue({
       id: 'member-789',
       workspaceId: 'ws-123',
       userId: 'user-456',
       role: 'ADMIN',
       joinedAt: new Date(),
-    });
+      workspace: mockWorkspace,
+    } as any);
     reflector.getAllAndOverride.mockReturnValue([Role.OWNER, Role.ADMIN]);
 
     const result = await guard.canActivate(context);
     expect(result).toBe(true);
+
+    const request = context.switchToHttp().getRequest<any>();
+    expect(request.workspace).toEqual(mockWorkspace);
   });
 });
