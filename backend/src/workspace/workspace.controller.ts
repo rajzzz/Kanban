@@ -22,7 +22,10 @@ import type { CurrentUserPayload } from '../auth/decorators/current-user.decorat
 import { WorkspaceRoleGuard } from '../auth/guards/workspace-role.guard';
 import { Roles, Role } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Workspaces')
+@ApiCookieAuth()
 @Controller('workspaces')
 export class WorkspaceController {
   constructor(private readonly workspaceService: WorkspaceService) {}

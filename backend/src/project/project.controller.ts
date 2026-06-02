@@ -15,6 +15,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { WorkspaceRoleGuard } from '../auth/guards/workspace-role.guard';
 import { Roles, Role } from '../auth/decorators/roles.decorator';
+import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 
 /**
  * All routes are nested under /workspaces/:workspaceId/projects.
@@ -22,6 +23,8 @@ import { Roles, Role } from '../auth/decorators/roles.decorator';
  * automatically verifies workspace membership and attaches req.workspace.
  * Role restrictions are added per-route where needed.
  */
+@ApiTags('Projects')
+@ApiCookieAuth()
 @Controller('workspaces/:workspaceId/projects')
 @UseGuards(WorkspaceRoleGuard)
 export class ProjectController {

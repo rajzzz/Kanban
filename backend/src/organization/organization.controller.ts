@@ -11,9 +11,12 @@ import {
 } from '@nestjs/common';
 import { OrganizationService } from './organization.service';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
+import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 
+@ApiTags('Organizations')
+@ApiCookieAuth()
 @Controller('organizations')
 export class OrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}

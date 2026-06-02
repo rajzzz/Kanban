@@ -18,6 +18,7 @@ import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import { WorkspaceRoleGuard } from '../auth/guards/workspace-role.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
+import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 
 /**
  * Two route groups:
@@ -40,6 +41,8 @@ import type { CurrentUserPayload } from '../auth/decorators/current-user.decorat
 // ─────────────────────────────────────────────────────────
 // Nested task routes: creation + listing
 // ─────────────────────────────────────────────────────────
+@ApiTags('Tasks')
+@ApiCookieAuth()
 @Controller('workspaces/:workspaceId/projects/:projectId/tasks')
 @UseGuards(WorkspaceRoleGuard)
 export class TaskController {
@@ -81,6 +84,8 @@ export class TaskController {
 // These don't have workspaceId in the URL; the service resolves
 // workspace scope from task → project → workspace internally.
 // ─────────────────────────────────────────────────────────
+@ApiTags('Tasks')
+@ApiCookieAuth()
 @Controller('tasks')
 export class TaskActionController {
   constructor(private readonly taskService: TaskService) {}

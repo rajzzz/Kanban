@@ -16,7 +16,9 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './decorators/public.decorator';
+import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -27,6 +29,7 @@ export class AuthController {
    * The access_token cookie is validated by JwtAuthGuard globally — if it
    * reaches this handler the token is valid. Returns user identity only.
    */
+  @ApiCookieAuth()
   @Get('me')
   me(@CurrentUser() user: CurrentUserPayload) {
     return {
