@@ -305,7 +305,16 @@ describe('WorkspaceService', () => {
       });
 
       expect(result.token).toContain('mocked-signed-jwt');
-      expect(result.invite).toEqual(mockInviteRecord);
+      expect(result.invite).toEqual({
+        id: mockInviteRecord.id,
+        email: mockInviteRecord.email,
+        role: mockInviteRecord.role,
+        status: mockInviteRecord.status,
+        expiresAt: mockInviteRecord.expiresAt,
+        createdAt: mockInviteRecord.createdAt,
+        workspaceId: mockInviteRecord.workspaceId,
+        invitedById: mockInviteRecord.invitedById,
+      });
       expect(mockJwtService.signAsync).toHaveBeenCalledWith(
         {
           workspaceId: 'ws-123',

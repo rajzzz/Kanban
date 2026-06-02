@@ -198,9 +198,19 @@ export class WorkspaceService {
     });
 
     // In production, we'd email the token. For this task, return it in the response.
+    const publicInvite = {
+      id: invite.id,
+      email: invite.email,
+      role: invite.role,
+      status: invite.status,
+      expiresAt: invite.expiresAt,
+      createdAt: invite.createdAt,
+      workspaceId: invite.workspaceId,
+      invitedById: invite.invitedById,
+    };
     return {
       token: inviteToken,
-      invite,
+      invite: publicInvite,
     };
   }
 
