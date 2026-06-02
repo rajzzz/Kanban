@@ -96,6 +96,12 @@ export interface LoginPayload {
   password: string;
 }
 
+export interface RegisterPayload extends LoginPayload {
+  firstName?: string;
+  lastName?: string;
+  organizationName?: string;
+}
+
 export interface AuthUser {
   userId: string;
   workspaceId: string | null;
@@ -105,6 +111,9 @@ export interface AuthUser {
 export const authApi = {
   login: (payload: LoginPayload) =>
     apiClient.post<{ success: boolean }>("/auth/login", payload),
+
+  register: (payload: RegisterPayload) =>
+    apiClient.post<{ success: boolean }>("/auth/register", payload),
 
   logout: () => apiClient.post<{ success: boolean }>("/auth/logout"),
 

@@ -278,33 +278,14 @@ function LoginForm() {
 
           {/* Footer */}
           <p
-            className="animate-fade-up-delay"
-            style={{
-              textAlign: "center",
-              marginTop: "1.5rem",
-              fontSize: "0.875rem",
-              color: "var(--text-secondary)",
-            }}
+            className="mt-2 text-center text-sm text-gray-600"
           >
-            Don&apos;t have an account?{" "}
+            Don't have an account?{" "}
             <Link
               href="/register"
-              style={{
-                color: "var(--brand-400)",
-                fontWeight: 500,
-                textDecoration: "none",
-                transition: "color 0.15s",
-              }}
-              onMouseEnter={(e) =>
-                ((e.currentTarget as HTMLAnchorElement).style.color =
-                  "var(--brand-500)")
-              }
-              onMouseLeave={(e) =>
-                ((e.currentTarget as HTMLAnchorElement).style.color =
-                  "var(--brand-400)")
-              }
+              className="font-medium text-indigo-600 hover:text-indigo-500"
             >
-              Register
+              Sign up
             </Link>
           </p>
         </div>
