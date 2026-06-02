@@ -35,16 +35,19 @@ function RegisterForm() {
     setError(null);
 
     const formData = new FormData(e.currentTarget);
-    const payload = Object.fromEntries(formData) as RegisterPayload;
+    const payload = Object.fromEntries(formData) as unknown as RegisterPayload;
 
     try {
       await authApi.register(payload);
       router.push(from || "/dashboard");
-    } catch (err: any) {
-      const errorData = err?.response?.data;
-      const message = Array.isArray(errorData.message)
-        ? errorData.message.join(", ")
-        : errorData.message || "An unexpected error occurred.";
+    } catch (err) {
+      const axiosErr = err as { response?: { data?: { message?: string | string[] } } };
+      const errorData = axiosErr.response?.data;
+      const message = errorData
+        ? Array.isArray(errorData.message)
+          ? errorData.message.join(", ")
+          : errorData.message || "An unexpected error occurred."
+        : "An unexpected error occurred.";
       setError(message);
     } finally {
       setLoading(false);

@@ -278,12 +278,31 @@ function LoginForm() {
 
           {/* Footer */}
           <p
-            className="mt-2 text-center text-sm text-gray-600"
+            className="animate-fade-up-delay"
+            style={{
+              textAlign: "center",
+              marginTop: "1.5rem",
+              fontSize: "0.875rem",
+              color: "var(--text-secondary)",
+            }}
           >
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link
               href="/register"
-              className="font-medium text-indigo-600 hover:text-indigo-500"
+              style={{
+                color: "var(--brand-400)",
+                fontWeight: 500,
+                textDecoration: "none",
+                transition: "color 0.15s",
+              }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLAnchorElement).style.color =
+                  "var(--brand-500)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLAnchorElement).style.color =
+                  "var(--brand-400)")
+              }
             >
               Sign up
             </Link>
