@@ -3,8 +3,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WorkspaceService } from './workspace.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ForbiddenException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { WorkspaceRole } from '../../generated/prisma/client';
 
 // Typed mock helpers — extracted so ESLint sees them as jest.Mock, not `any` members
 const mockOrgMember = {
@@ -15,8 +21,20 @@ const mockWorkspace = {
   create: jest.fn(),
   findMany: jest.fn(),
 };
-const mockWorkspaceMember = { create: jest.fn() };
-const mockWorkspaceInvite = { create: jest.fn() };
+const mockWorkspaceMember = {
+  create: jest.fn(),
+  findMany: jest.fn(),
+  findUnique: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+  count: jest.fn(),
+};
+const mockWorkspaceInvite = {
+  create: jest.fn(),
+  findFirst: jest.fn(),
+  update: jest.fn(),
+};
+const mockUser = { findUnique: jest.fn() };
 const mockTransaction = jest.fn();
 
 const mockPrismaService = {
@@ -24,6 +42,7 @@ const mockPrismaService = {
   workspace: mockWorkspace,
   workspaceMember: mockWorkspaceMember,
   workspaceInvite: mockWorkspaceInvite,
+  user: mockUser,
   $transaction: mockTransaction,
 };
 
@@ -40,6 +59,7 @@ describe('WorkspaceService', () => {
 
     mockJwtService = {
       signAsync: jest.fn().mockResolvedValue('mocked-signed-jwt'),
+      verifyAsync: jest.fn(),
     } as unknown as jest.Mocked<JwtService>;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -57,6 +77,9 @@ describe('WorkspaceService', () => {
     jest.clearAllMocks();
   });
 
+  // ─────────────────────────────────────────────────────────
+  // create
+  // ─────────────────────────────────────────────────────────
   describe('create', () => {
     it('should create workspace using organizationId in DTO if user is OWNER/ADMIN', async () => {
       mockOrgMember.findUnique.mockResolvedValue({
@@ -154,6 +177,9 @@ describe('WorkspaceService', () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────
+  // findMyWorkspaces
+  // ─────────────────────────────────────────────────────────
   describe('findMyWorkspaces', () => {
     it('should query workspaces for the specified user and include their membership details', async () => {
       const mockWorkspaces = [
@@ -190,6 +216,9 @@ describe('WorkspaceService', () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────
+  // findAllForUserInOrg
+  // ─────────────────────────────────────────────────────────
   describe('findAllForUserInOrg', () => {
     it('should throw ForbiddenException if user does not belong to the organization', async () => {
       mockOrgMember.findUnique.mockResolvedValue(null);
@@ -250,6 +279,9 @@ describe('WorkspaceService', () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────
+  // inviteUser
+  // ─────────────────────────────────────────────────────────
   describe('inviteUser', () => {
     it('should generate a token, save hashed invite to DB, and return token', async () => {
       const mockInviteRecord = {
@@ -268,7 +300,7 @@ describe('WorkspaceService', () => {
       const result = await service.inviteUser('user-456', {
         workspaceId: 'ws-123',
         email: 'invitee@example.com',
-        role: 'MEMBER',
+        role: WorkspaceRole.MEMBER,
       });
 
       expect(result.token).toContain('mocked-signed-jwt');
@@ -290,6 +322,243 @@ describe('WorkspaceService', () => {
           invitedById: 'user-456',
           status: 'PENDING',
         }),
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // acceptInvite
+  // ─────────────────────────────────────────────────────────
+  describe('acceptInvite', () => {
+    const VALID_TOKEN = 'prefix1234.valid-jwt-part';
+    const FUTURE_DATE = new Date(Date.now() + 1_000_000);
+
+    it('should throw BadRequestException for tokens without a dot separator', async () => {
+      await expect(
+        service.acceptInvite('user-1', { token: 'nodotatall' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when JWT verification fails', async () => {
+      mockJwtService.verifyAsync.mockRejectedValue(new Error('jwt expired'));
+
+      await expect(
+        service.acceptInvite('user-1', { token: VALID_TOKEN }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when invite record is not found', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        workspaceId: 'ws-1',
+        inviteeEmail: 'user@test.com',
+      });
+      mockWorkspaceInvite.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.acceptInvite('user-1', { token: VALID_TOKEN }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw ConflictException when invite is already accepted', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        workspaceId: 'ws-1',
+        inviteeEmail: 'user@test.com',
+      });
+      mockWorkspaceInvite.findFirst.mockResolvedValue({
+        id: 'inv-1',
+        status: 'ACCEPTED',
+        workspaceId: 'ws-1',
+        role: WorkspaceRole.MEMBER,
+        expiresAt: FUTURE_DATE,
+      });
+
+      await expect(
+        service.acceptInvite('user-1', { token: VALID_TOKEN }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should create membership and mark invite ACCEPTED atomically', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        workspaceId: 'ws-1',
+        inviteeEmail: 'invitee@test.com',
+      });
+      mockWorkspaceInvite.findFirst.mockResolvedValue({
+        id: 'inv-1',
+        status: 'PENDING',
+        workspaceId: 'ws-1',
+        role: WorkspaceRole.MEMBER,
+        expiresAt: FUTURE_DATE,
+      });
+      mockUser.findUnique.mockResolvedValue({ id: 'user-abc' });
+      mockWorkspaceMember.findUnique.mockResolvedValue(null); // not already a member
+      mockWorkspaceMember.create.mockResolvedValue({
+        workspaceId: 'ws-1',
+        userId: 'user-abc',
+        role: WorkspaceRole.MEMBER,
+      });
+      mockWorkspaceInvite.update.mockResolvedValue({
+        id: 'inv-1',
+        status: 'ACCEPTED',
+      });
+
+      const result = await service.acceptInvite('user-1', {
+        token: VALID_TOKEN,
+      });
+
+      expect(result.member).toHaveProperty('workspaceId', 'ws-1');
+      expect(result.invite).toHaveProperty('status', 'ACCEPTED');
+      expect(mockWorkspaceMember.create).toHaveBeenCalledWith({
+        data: {
+          workspaceId: 'ws-1',
+          userId: 'user-abc',
+          role: WorkspaceRole.MEMBER,
+        },
+      });
+      expect(mockWorkspaceInvite.update).toHaveBeenCalledWith({
+        where: { id: 'inv-1' },
+        data: { status: 'ACCEPTED' },
+      });
+    });
+
+    it('should throw ConflictException if user is already a member', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        workspaceId: 'ws-1',
+        inviteeEmail: 'invitee@test.com',
+      });
+      mockWorkspaceInvite.findFirst.mockResolvedValue({
+        id: 'inv-1',
+        status: 'PENDING',
+        workspaceId: 'ws-1',
+        role: WorkspaceRole.MEMBER,
+        expiresAt: FUTURE_DATE,
+      });
+      mockUser.findUnique.mockResolvedValue({ id: 'user-abc' });
+      mockWorkspaceMember.findUnique.mockResolvedValue({
+        workspaceId: 'ws-1',
+        userId: 'user-abc',
+        role: WorkspaceRole.MEMBER,
+      });
+
+      await expect(
+        service.acceptInvite('user-1', { token: VALID_TOKEN }),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // listMembers
+  // ─────────────────────────────────────────────────────────
+  describe('listMembers', () => {
+    it('should return all members with user details using a single query', async () => {
+      const mockMembers = [
+        { userId: 'u-1', role: 'OWNER', user: { id: 'u-1', email: 'a@b.com' } },
+        {
+          userId: 'u-2',
+          role: 'MEMBER',
+          user: { id: 'u-2', email: 'c@d.com' },
+        },
+      ];
+      mockWorkspaceMember.findMany.mockResolvedValue(mockMembers);
+
+      const result = await service.listMembers('ws-1');
+
+      expect(result).toEqual(mockMembers);
+      expect(mockWorkspaceMember.findMany).toHaveBeenCalledWith({
+        where: { workspaceId: 'ws-1' },
+        include: { user: true },
+        orderBy: { joinedAt: 'asc' },
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // updateMemberRole
+  // ─────────────────────────────────────────────────────────
+  describe('updateMemberRole', () => {
+    it('should throw ForbiddenException when demoting the last OWNER', async () => {
+      mockWorkspaceMember.count.mockResolvedValue(1);
+      mockWorkspaceMember.findUnique.mockResolvedValue({
+        role: WorkspaceRole.OWNER,
+      });
+
+      await expect(
+        service.updateMemberRole('ws-1', 'u-1', { role: WorkspaceRole.MEMBER }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw NotFoundException when target user is not in workspace', async () => {
+      mockWorkspaceMember.count.mockResolvedValue(2);
+      mockWorkspaceMember.findUnique
+        .mockResolvedValueOnce({ role: WorkspaceRole.OWNER }) // count check finds target
+        .mockResolvedValueOnce(null); // second findUnique for existence check
+
+      await expect(
+        service.updateMemberRole('ws-1', 'u-missing', {
+          role: WorkspaceRole.MEMBER,
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should update role successfully when multiple owners exist', async () => {
+      mockWorkspaceMember.count.mockResolvedValue(2);
+      mockWorkspaceMember.findUnique.mockResolvedValue({
+        role: WorkspaceRole.OWNER,
+      });
+      mockWorkspaceMember.update.mockResolvedValue({
+        userId: 'u-1',
+        role: WorkspaceRole.MEMBER,
+        user: { id: 'u-1' },
+      });
+
+      const result = await service.updateMemberRole('ws-1', 'u-1', {
+        role: WorkspaceRole.MEMBER,
+      });
+
+      expect(result.role).toBe(WorkspaceRole.MEMBER);
+      expect(mockWorkspaceMember.update).toHaveBeenCalledWith({
+        where: { workspaceId_userId: { workspaceId: 'ws-1', userId: 'u-1' } },
+        data: { role: WorkspaceRole.MEMBER },
+        include: { user: true },
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // removeMember
+  // ─────────────────────────────────────────────────────────
+  describe('removeMember', () => {
+    it('should throw NotFoundException when target member does not exist', async () => {
+      mockWorkspaceMember.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.removeMember('ws-1', 'req-user', 'missing-user'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ForbiddenException when removing self as last OWNER', async () => {
+      mockWorkspaceMember.findUnique.mockResolvedValue({
+        role: WorkspaceRole.OWNER,
+      });
+      mockWorkspaceMember.count.mockResolvedValue(1);
+
+      await expect(
+        service.removeMember('ws-1', 'u-owner', 'u-owner'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should delete the member record when removal is valid', async () => {
+      mockWorkspaceMember.findUnique.mockResolvedValue({
+        role: WorkspaceRole.MEMBER,
+      });
+      mockWorkspaceMember.delete.mockResolvedValue({
+        userId: 'u-2',
+        workspaceId: 'ws-1',
+      });
+
+      await service.removeMember('ws-1', 'u-owner', 'u-2');
+
+      expect(mockWorkspaceMember.delete).toHaveBeenCalledWith({
+        where: { workspaceId_userId: { workspaceId: 'ws-1', userId: 'u-2' } },
       });
     });
   });

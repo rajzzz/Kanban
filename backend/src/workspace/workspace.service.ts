@@ -1,10 +1,24 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID, createHmac } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { InviteUserDto } from './dto/invite-user.dto';
+import { AcceptInviteDto } from './dto/accept-invite.dto';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { getAccessTokenSecret } from '../auth/auth-token.config';
+import { WorkspaceRole } from '../../generated/prisma/client';
+
+interface InviteTokenPayload {
+  workspaceId: string;
+  inviteeEmail: string;
+}
 
 @Injectable()
 export class WorkspaceService {
@@ -12,6 +26,10 @@ export class WorkspaceService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
+
+  // ─────────────────────────────────────────────────────────
+  // Workspace CRUD
+  // ─────────────────────────────────────────────────────────
 
   async create(userId: string, dto: CreateWorkspaceDto) {
     let orgId = dto.organizationId;
@@ -136,6 +154,10 @@ export class WorkspaceService {
     });
   }
 
+  // ─────────────────────────────────────────────────────────
+  // Invites
+  // ─────────────────────────────────────────────────────────
+
   async inviteUser(userId: string, dto: InviteUserDto) {
     const { workspaceId, email, role } = dto;
 
@@ -180,5 +202,176 @@ export class WorkspaceService {
       token: inviteToken,
       invite,
     };
+  }
+
+  async acceptInvite(userId: string, dto: AcceptInviteDto) {
+    const { token } = dto;
+
+    // 1. Validate token structure: <prefix>.<jwt>
+    const dotIndex = token.indexOf('.');
+    if (dotIndex === -1) {
+      throw new BadRequestException('Invalid invite token format');
+    }
+    const tokenPrefix = token.slice(0, dotIndex);
+
+    // 2. Verify JWT signature + expiry
+    let payload: InviteTokenPayload;
+    try {
+      payload = await this.jwtService.verifyAsync<InviteTokenPayload>(
+        token.slice(dotIndex + 1),
+        { secret: getAccessTokenSecret() },
+      );
+    } catch {
+      throw new BadRequestException('Invite token is invalid or has expired');
+    }
+
+    // 3. Recompute HMAC hash and look up the invite record by prefix + hash
+    const tokenHash = createHmac('sha256', getAccessTokenSecret())
+      .update(token)
+      .digest('hex');
+
+    const invite = await this.prisma.workspaceInvite.findFirst({
+      where: { tokenPrefix, tokenHash },
+    });
+
+    if (!invite) {
+      throw new BadRequestException('Invite token not found');
+    }
+
+    if (invite.status !== 'PENDING') {
+      throw new ConflictException(
+        'Invite has already been accepted or revoked',
+      );
+    }
+
+    if (invite.expiresAt < new Date()) {
+      throw new BadRequestException('Invite token has expired');
+    }
+
+    // 4. Resolve the userId whose email matches, or use the authenticated user
+    const inviteeUser = await this.prisma.user.findUnique({
+      where: { email: payload.inviteeEmail },
+    });
+
+    const memberId = inviteeUser?.id ?? userId;
+
+    // 5. Atomic transaction: create membership + mark invite ACCEPTED
+    return this.prisma.$transaction(async (tx) => {
+      // Check if already a member to avoid unique constraint error
+      const existing = await tx.workspaceMember.findUnique({
+        where: {
+          workspaceId_userId: {
+            workspaceId: invite.workspaceId,
+            userId: memberId,
+          },
+        },
+      });
+
+      if (existing) {
+        throw new ConflictException(
+          'You are already a member of this workspace',
+        );
+      }
+
+      const member = await tx.workspaceMember.create({
+        data: {
+          workspaceId: invite.workspaceId,
+          userId: memberId,
+          role: invite.role,
+        },
+      });
+
+      const updatedInvite = await tx.workspaceInvite.update({
+        where: { id: invite.id },
+        data: { status: 'ACCEPTED' },
+      });
+
+      return { member, invite: updatedInvite };
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // Members
+  // ─────────────────────────────────────────────────────────
+
+  async listMembers(workspaceId: string) {
+    // Single query with user details — no N+1
+    return this.prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      include: { user: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+  }
+
+  async updateMemberRole(
+    workspaceId: string,
+    targetUserId: string,
+    dto: UpdateMemberRoleDto,
+  ) {
+    // Guard: cannot demote the last OWNER
+    if (dto.role !== WorkspaceRole.OWNER) {
+      const ownerCount = await this.prisma.workspaceMember.count({
+        where: { workspaceId, role: WorkspaceRole.OWNER },
+      });
+
+      const targetIsOwner = await this.prisma.workspaceMember.findUnique({
+        where: {
+          workspaceId_userId: { workspaceId, userId: targetUserId },
+        },
+      });
+
+      if (ownerCount === 1 && targetIsOwner?.role === WorkspaceRole.OWNER) {
+        throw new ForbiddenException(
+          'Cannot demote the last OWNER of a workspace',
+        );
+      }
+    }
+
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Member not found in this workspace');
+    }
+
+    return this.prisma.workspaceMember.update({
+      where: {
+        workspaceId_userId: { workspaceId, userId: targetUserId },
+      },
+      data: { role: dto.role },
+      include: { user: true },
+    });
+  }
+
+  async removeMember(
+    workspaceId: string,
+    requestingUserId: string,
+    targetUserId: string,
+  ) {
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Member not found in this workspace');
+    }
+
+    // Cannot remove self if you are the last OWNER
+    if (requestingUserId === targetUserId) {
+      const ownerCount = await this.prisma.workspaceMember.count({
+        where: { workspaceId, role: WorkspaceRole.OWNER },
+      });
+
+      if (member.role === WorkspaceRole.OWNER && ownerCount === 1) {
+        throw new ForbiddenException(
+          'Cannot remove yourself as you are the last OWNER of this workspace',
+        );
+      }
+    }
+
+    return this.prisma.workspaceMember.delete({
+      where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
+    });
   }
 }
