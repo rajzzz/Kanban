@@ -26,6 +26,11 @@ export class WorkspaceController {
     return this.workspaceService.create(user.userId, dto);
   }
 
+  @Get('me')
+  async findMyWorkspaces(@CurrentUser() user: CurrentUserPayload) {
+    return this.workspaceService.findMyWorkspaces(user.userId);
+  }
+
   @Get()
   async findAll(
     @CurrentUser() user: CurrentUserPayload,

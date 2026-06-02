@@ -142,6 +142,42 @@ describe('WorkspaceService', () => {
     });
   });
 
+  describe('findMyWorkspaces', () => {
+    it('should query workspaces for the specified user and include their membership details', async () => {
+      const mockWorkspaces = [
+        {
+          id: 'w-1',
+          name: 'Workspace A',
+          members: [{ role: 'ADMIN' }],
+        },
+      ];
+      mockWorkspace.findMany.mockResolvedValue(mockWorkspaces);
+
+      const result = await service.findMyWorkspaces('user-id-456');
+
+      expect(result).toEqual(mockWorkspaces);
+      expect(mockWorkspace.findMany).toHaveBeenCalledWith({
+        where: {
+          members: {
+            some: {
+              userId: 'user-id-456',
+            },
+          },
+        },
+        include: {
+          members: {
+            where: {
+              userId: 'user-id-456',
+            },
+          },
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      });
+    });
+  });
+
   describe('findAllForUserInOrg', () => {
     it('should throw ForbiddenException if user does not belong to the organization', async () => {
       mockOrgMember.findUnique.mockResolvedValue(null);

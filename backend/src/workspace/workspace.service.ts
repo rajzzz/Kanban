@@ -106,4 +106,26 @@ export class WorkspaceService {
       });
     }
   }
+
+  async findMyWorkspaces(userId: string) {
+    return this.prisma.workspace.findMany({
+      where: {
+        members: {
+          some: {
+            userId,
+          },
+        },
+      },
+      include: {
+        members: {
+          where: {
+            userId,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }
 }
