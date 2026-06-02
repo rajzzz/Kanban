@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   HttpCode,
@@ -8,6 +9,8 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { CurrentUser } from './decorators/current-user.decorator';
+import type { CurrentUserPayload } from './decorators/current-user.decorator';
 import * as express from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -17,6 +20,21 @@ import { Public } from './decorators/public.decorator';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  /**
+   * GET /auth/me
+   * Lightweight session-check endpoint used by Next.js middleware.
+   * The access_token cookie is validated by JwtAuthGuard globally — if it
+   * reaches this handler the token is valid. Returns user identity only.
+   */
+  @Get('me')
+  me(@CurrentUser() user: CurrentUserPayload) {
+    return {
+      userId: user.userId,
+      workspaceId: user.workspaceId,
+      role: user.role,
+    };
+  }
 
   @Public()
   @Post('register')
@@ -37,7 +55,7 @@ export class AuthController {
     // Set Access Token cookie (15 mins)
     res.cookie('access_token', accessToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 15 * 60 * 1000, // 15 mins
     });
@@ -45,7 +63,7 @@ export class AuthController {
     // Set Refresh Token cookie (7 days)
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
@@ -85,7 +103,7 @@ export class AuthController {
     // Set new Access Token cookie (15 mins)
     res.cookie('access_token', tokens.accessToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 15 * 60 * 1000, // 15 mins
     });
@@ -93,7 +111,7 @@ export class AuthController {
     // Set new Refresh Token cookie (7 days)
     res.cookie('refresh_token', tokens.refreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
@@ -133,7 +151,7 @@ export class AuthController {
     // Clear access_token cookie
     res.cookie('access_token', '', {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 0,
     });
@@ -141,7 +159,7 @@ export class AuthController {
     // Clear refresh_token cookie
     res.cookie('refresh_token', '', {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 0,
     });
