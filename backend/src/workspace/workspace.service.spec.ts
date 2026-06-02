@@ -292,6 +292,7 @@ describe('WorkspaceService', () => {
         tokenHash: 'some-hmac-sha256-hash',
         tokenPrefix: 'abc123xyz8',
         expiresAt: new Date(),
+        createdAt: new Date(),
         status: 'PENDING',
         workspaceId: 'ws-123',
         invitedById: 'user-456',
