@@ -94,13 +94,6 @@ export class AuthService {
     // 1. Retrieve user by email (including their workspace memberships)
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: {
-        memberships: {
-          orderBy: {
-            joinedAt: 'asc', // grab the earliest joined membership as default
-          },
-        },
-      },
     });
 
     // 2. Validate user existence and password
@@ -116,21 +109,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // 3. Determine workspaceId and role for the payload
-    // Get their primary workspace ID and role
-    const primaryMembership = user.memberships[0];
-    const workspaceId = primaryMembership
-      ? primaryMembership.workspaceId
-      : null;
-    const role = primaryMembership ? primaryMembership.role : null;
 
     // 4. Generate Access Token JWT (15-min expiry)
-    // Payload: userId, workspaceId, role
+    // Payload: identity only — workspaceId/role are NOT baked into the token.
+    // WorkspaceRoleGuard re-queries WorkspaceMember on every request.
     const accessTokenPayload = {
       sub: user.id,
       userId: user.id,
-      workspaceId,
-      role,
     };
     const accessToken = await this.jwtService.signAsync(accessTokenPayload, {
       secret: getAccessTokenSecret(),
@@ -198,15 +183,7 @@ export class AuthService {
     // Retrieve the token from database
     const record = await this.prisma.refreshToken.findUnique({
       where: { id: tokenId },
-      include: {
-        user: {
-          include: {
-            memberships: {
-              orderBy: { joinedAt: 'asc' },
-            },
-          },
-        },
-      },
+      include: { user: true },
     });
 
     if (!record || record.revoked || record.expiresAt < new Date()) {
@@ -227,18 +204,10 @@ export class AuthService {
       Date.now() + 7 * 24 * 60 * 60 * 1000,
     ); // 7 days
 
-    const primaryMembership = record.user.memberships[0];
-    const workspaceId = primaryMembership
-      ? primaryMembership.workspaceId
-      : null;
-    const role = primaryMembership ? primaryMembership.role : null;
-
-    // Sign new Access Token
+    // Sign new Access Token — identity only
     const accessTokenPayload = {
       sub: record.userId,
       userId: record.userId,
-      workspaceId,
-      role,
     };
     const accessToken = await this.jwtService.signAsync(accessTokenPayload, {
       secret: getAccessTokenSecret(),

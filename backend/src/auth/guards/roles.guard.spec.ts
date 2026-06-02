@@ -1,8 +1,16 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from './roles.guard';
 import { Role } from '../decorators/roles.decorator';
 
+/**
+ * RolesGuard is a documented pass-through guard.
+ * Role enforcement is delegated to WorkspaceRoleGuard which
+ * re-queries WorkspaceMember on every request.
+ *
+ * These tests verify the guard returns true in all cases
+ * (it no longer inspects the JWT role).
+ */
 describe('RolesGuard', () => {
   let guard: RolesGuard;
   let reflector: jest.Mocked<Reflector>;
@@ -15,77 +23,33 @@ describe('RolesGuard', () => {
     guard = new RolesGuard(reflector);
   });
 
-  function createMockContext(user?: { role: string | null }): ExecutionContext {
+  function createMockContext(): ExecutionContext {
     return {
-      getHandler: jest.fn(),
-      getClass: jest.fn(),
-      switchToHttp: jest.fn().mockReturnValue({
-        getRequest: jest.fn().mockReturnValue({ user }),
-      }),
-    } as unknown as ExecutionContext;
-  }
-
-  it('should return true if no roles are required', () => {
-    reflector.getAllAndOverride.mockReturnValue(undefined);
-
-    const context = createMockContext();
-    const result = guard.canActivate(context);
-
-    expect(result).toBe(true);
-  });
-
-  it('should return true if empty roles array is required', () => {
-    reflector.getAllAndOverride.mockReturnValue([]);
-
-    const context = createMockContext();
-    const result = guard.canActivate(context);
-
-    expect(result).toBe(true);
-  });
-
-  it('should throw ForbiddenException if roles are required but user is not in request', () => {
-    reflector.getAllAndOverride.mockReturnValue([Role.ADMIN]);
-
-    // Context with no user object
-    const context = {
       getHandler: jest.fn(),
       getClass: jest.fn(),
       switchToHttp: jest.fn().mockReturnValue({
         getRequest: jest.fn().mockReturnValue({}),
       }),
     } as unknown as ExecutionContext;
+  }
 
-    expect(() => guard.canActivate(context)).toThrow(
-      new ForbiddenException('Access denied: insufficient permissions'),
-    );
+  it('should return true when no roles are required', () => {
+    reflector.getAllAndOverride.mockReturnValue(undefined);
+    expect(guard.canActivate(createMockContext())).toBe(true);
   });
 
-  it('should throw ForbiddenException if roles are required but user role is null', () => {
+  it('should return true when empty roles array', () => {
+    reflector.getAllAndOverride.mockReturnValue([]);
+    expect(guard.canActivate(createMockContext())).toBe(true);
+  });
+
+  it('should return true even when @Roles() is set — WorkspaceRoleGuard handles enforcement', () => {
     reflector.getAllAndOverride.mockReturnValue([Role.ADMIN]);
-
-    const context = createMockContext({ role: null });
-
-    expect(() => guard.canActivate(context)).toThrow(
-      new ForbiddenException('Access denied: insufficient permissions'),
-    );
+    expect(guard.canActivate(createMockContext())).toBe(true);
   });
 
-  it('should throw ForbiddenException if user role does not match required roles', () => {
+  it('should return true regardless of required roles — enforcement is in WorkspaceRoleGuard', () => {
     reflector.getAllAndOverride.mockReturnValue([Role.OWNER, Role.ADMIN]);
-
-    const context = createMockContext({ role: Role.MEMBER });
-
-    expect(() => guard.canActivate(context)).toThrow(
-      new ForbiddenException('Access denied: insufficient permissions'),
-    );
-  });
-
-  it('should return true if user role matches one of the required roles', () => {
-    reflector.getAllAndOverride.mockReturnValue([Role.OWNER, Role.ADMIN]);
-
-    const context = createMockContext({ role: Role.ADMIN });
-    const result = guard.canActivate(context);
-
-    expect(result).toBe(true);
+    expect(guard.canActivate(createMockContext())).toBe(true);
   });
 });

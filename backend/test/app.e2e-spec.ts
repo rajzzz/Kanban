@@ -59,15 +59,18 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('/ (GET)', (done) => {
     if (!canBindPort) {
+      done();
       return;
     }
 
-    return request(app.getHttpServer())
+    void request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect('Hello World!')
+      .then(() => done())
+      .catch(done);
   });
 
   afterEach(async () => {

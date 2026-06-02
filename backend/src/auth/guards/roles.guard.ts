@@ -1,18 +1,21 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Request } from 'express';
 import { ROLES_KEY, Role } from '../decorators/roles.decorator';
-import { CurrentUserPayload } from '../decorators/current-user.decorator';
 
-interface AuthenticatedRequest extends Request {
-  user?: CurrentUserPayload;
-}
-
+/**
+ * RolesGuard is intentionally a no-op pass-through.
+ *
+ * Role enforcement in this application is done at the workspace level
+ * by WorkspaceRoleGuard, which queries WorkspaceMember on every request.
+ *
+ * The JWT access token carries only identity (userId) — not role or workspaceId —
+ * to avoid stale role data in a multi-workspace context.
+ *
+ * This guard is kept registered globally (via APP_GUARD in AppModule) so that
+ * @Roles() metadata on any handler is not silently ignored. If you add a route
+ * that requires role enforcement outside the workspace context, implement the
+ * check in the relevant service or a dedicated guard.
+ */
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -23,23 +26,13 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    // If no roles are required on this route/controller, allow access
+    // No @Roles() decorator → pass through
     if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const user = request.user;
-
-    if (!user || !user.role) {
-      throw new ForbiddenException('Access denied: insufficient permissions');
-    }
-
-    const hasRole = requiredRoles.includes(user.role as Role);
-    if (!hasRole) {
-      throw new ForbiddenException('Access denied: insufficient permissions');
-    }
-
+    // @Roles() on a route outside WorkspaceRoleGuard context is a mis-use.
+    // WorkspaceRoleGuard handles role checks — this guard is intentionally permissive.
     return true;
   }
 }

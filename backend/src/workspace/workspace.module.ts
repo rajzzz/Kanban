@@ -7,5 +7,6 @@ import { WorkspaceService } from './workspace.service';
   imports: [AuthModule],
   controllers: [WorkspaceController],
   providers: [WorkspaceService],
+  exports: [WorkspaceService],
 })
 export class WorkspaceModule {}

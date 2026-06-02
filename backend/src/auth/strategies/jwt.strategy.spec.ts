@@ -26,21 +26,26 @@ describe('JwtStrategy', () => {
   });
 
   describe('validate', () => {
-    it('should validate and return user payload with sub as fallback', () => {
+    it('should validate and return user payload with userId from sub fallback', () => {
+      // Token now carries only identity — no workspaceId or role
       const payload = {
         sub: 'user-id-123',
         userId: 'user-id-123',
-        workspaceId: 'workspace-id-456',
-        role: 'OWNER',
       };
 
       const result = strategy.validate(payload);
 
       expect(result).toEqual({
         userId: 'user-id-123',
-        workspaceId: 'workspace-id-456',
-        role: 'OWNER',
       });
+    });
+
+    it('should fall back to sub when userId is missing', () => {
+      const payload = { sub: 'user-id-fallback', userId: undefined as unknown as string };
+
+      const result = strategy.validate(payload);
+
+      expect(result).toEqual({ userId: 'user-id-fallback' });
     });
   });
 

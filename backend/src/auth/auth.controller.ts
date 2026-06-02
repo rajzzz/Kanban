@@ -34,8 +34,6 @@ export class AuthController {
   me(@CurrentUser() user: CurrentUserPayload) {
     return {
       userId: user.userId,
-      workspaceId: user.workspaceId,
-      role: user.role,
     };
   }
 

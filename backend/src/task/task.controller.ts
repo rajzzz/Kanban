@@ -81,42 +81,41 @@ export class TaskController {
 
 // ─────────────────────────────────────────────────────────
 // Flat task routes: assign + status transition
-// These don't have workspaceId in the URL; the service resolves
-// workspace scope from task → project → workspace internally.
+// workspaceId is now in the URL — never from the JWT — so these routes
+// work correctly in a multi-workspace context and are properly guarded.
 // ─────────────────────────────────────────────────────────
 @ApiTags('Tasks')
 @ApiCookieAuth()
-@Controller('tasks')
+@Controller('workspaces/:workspaceId/tasks')
+@UseGuards(WorkspaceRoleGuard)
 export class TaskActionController {
   constructor(private readonly taskService: TaskService) {}
 
   /**
-   * PATCH /tasks/:taskId/assign
+   * PATCH /workspaces/:workspaceId/tasks/:taskId/assign
    * Assigns (or reassigns) a task to a workspace member.
    * Service validates that the assignee belongs to the task's workspace.
    */
   @Patch(':taskId/assign')
   assign(
-    @CurrentUser() user: CurrentUserPayload,
+    @Param('workspaceId') workspaceId: string,
     @Param('taskId') taskId: string,
     @Body() dto: AssignTaskDto,
   ) {
-    // workspaceId comes from the JWT user context — the workspace the caller is scoped to.
-    // resolveTaskInWorkspace then checks the task actually lives in that workspace.
-    return this.taskService.assign(user.workspaceId ?? '', taskId, dto);
+    return this.taskService.assign(workspaceId, taskId, dto);
   }
 
   /**
-   * PATCH /tasks/:taskId/status
+   * PATCH /workspaces/:workspaceId/tasks/:taskId/status
    * Enforced state machine: TODO → IN_PROGRESS → IN_REVIEW → DONE.
    * Backward or skipped transitions → 400.
    */
   @Patch(':taskId/status')
   updateStatus(
-    @CurrentUser() user: CurrentUserPayload,
+    @Param('workspaceId') workspaceId: string,
     @Param('taskId') taskId: string,
     @Body() dto: UpdateTaskStatusDto,
   ) {
-    return this.taskService.updateStatus(user.workspaceId ?? '', taskId, dto);
+    return this.taskService.updateStatus(workspaceId, taskId, dto);
   }
 }

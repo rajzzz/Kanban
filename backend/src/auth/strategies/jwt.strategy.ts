@@ -11,8 +11,6 @@ import {
 interface JwtPayload {
   sub: string;
   userId: string;
-  workspaceId: string | null;
-  role: string | null;
 }
 
 @Injectable()
@@ -45,8 +43,6 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   validate(payload: JwtPayload) {
     return {
       userId: payload.userId ?? payload.sub,
-      workspaceId: payload.workspaceId,
-      role: payload.role,
     };
   }
 }

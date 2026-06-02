@@ -4,15 +4,11 @@ import { Request } from 'express';
 interface AuthenticatedRequest extends Request {
   user?: {
     userId: string;
-    workspaceId: string | null;
-    role: string | null;
   };
 }
 
 export interface CurrentUserPayload {
   userId: string;
-  workspaceId: string | null;
-  role: string | null;
 }
 
 export const CurrentUser = createParamDecorator(

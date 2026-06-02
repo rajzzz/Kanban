@@ -428,4 +428,69 @@ export class WorkspaceService {
       where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
     });
   }
+
+  // ─────────────────────────────────────────────────────────
+  // Org-level workspace management (OWNER only)
+  // These live here — not in OrganizationService — because
+  // Workspace is this BC's aggregate root.
+  // ─────────────────────────────────────────────────────────
+
+  async updateWorkspace(
+    userId: string,
+    orgId: string,
+    workspaceId: string,
+    dto: { name?: string },
+  ) {
+    await this.assertOrgOwnerOfWorkspace(userId, orgId, workspaceId);
+
+    return this.prisma.workspace.update({
+      where: { id: workspaceId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+      },
+    });
+  }
+
+  async removeWorkspace(userId: string, orgId: string, workspaceId: string) {
+    await this.assertOrgOwnerOfWorkspace(userId, orgId, workspaceId);
+    await this.prisma.workspace.delete({ where: { id: workspaceId } });
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // Private helpers
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Verifies:
+   *  1. The requesting user is OWNER of the given organization.
+   *  2. The workspace exists and belongs to that organization.
+   *
+   * Note: this intentionally queries the OrganizationMember table — it is an
+   * ACL/policy check, not business logic leaking from the Organization BC.
+   */
+  private async assertOrgOwnerOfWorkspace(
+    userId: string,
+    orgId: string,
+    workspaceId: string,
+  ) {
+    const orgMember = await this.prisma.organizationMember.findUnique({
+      where: { organizationId_userId: { organizationId: orgId, userId } },
+    });
+
+    if (!orgMember || orgMember.role !== 'OWNER') {
+      throw new ForbiddenException(
+        'Only the organization OWNER can perform this action',
+      );
+    }
+
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+    });
+
+    if (!workspace || workspace.organizationId !== orgId) {
+      throw new NotFoundException('Workspace not found in this organization');
+    }
+
+    return workspace;
+  }
 }

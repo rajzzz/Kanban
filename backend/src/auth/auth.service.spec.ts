@@ -96,7 +96,6 @@ describe('AuthService', () => {
         id: 'user-id-123',
         email: 'test@example.com',
         passwordHash: 'hashed_password',
-        memberships: [],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
@@ -110,16 +109,8 @@ describe('AuthService', () => {
         id: 'user-id-123',
         email: 'test@example.com',
         passwordHash: 'hashed_password',
-        memberships: [
-          {
-            workspaceId: 'workspace-id-456',
-            role: 'OWNER',
-            joinedAt: new Date(),
-          },
-        ],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed_refresh_token');
 
       // signAsync called twice: once for access token, once for refresh token JWT
       mockJwtSignAsync
@@ -136,17 +127,16 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('accessToken', 'mock_access_token');
       expect(result).toHaveProperty('refreshToken', 'mock_refresh_token_jwt');
       expect(result).toHaveProperty('expiresAt');
+      // Identity-only query — no memberships include
       expect(mockUser.findUnique).toHaveBeenCalledWith({
         where: { email: 'test@example.com' },
-        include: { memberships: { orderBy: { joinedAt: 'asc' } } },
       });
+      // Access token carries only identity — no workspaceId or role
       expect(mockJwtSignAsync).toHaveBeenNthCalledWith(
         1,
         {
           sub: 'user-id-123',
           userId: 'user-id-123',
-          workspaceId: 'workspace-id-456',
-          role: 'OWNER',
         },
         {
           secret: 'test-secret',
@@ -193,7 +183,7 @@ describe('AuthService', () => {
         tokenHash: 'different_hash',
         expiresAt: new Date(Date.now() + 100000),
         revoked: false,
-        user: { memberships: [] },
+        user: { id: 'user-id-123' },
       });
 
       await expect(service.refresh('token_value')).rejects.toThrow(
@@ -212,15 +202,7 @@ describe('AuthService', () => {
         expiresAt: new Date(Date.now() + 100000),
         revoked: false,
         userId: 'user-id-123',
-        user: {
-          memberships: [
-            {
-              workspaceId: 'workspace-id-456',
-              role: 'OWNER',
-              joinedAt: new Date(),
-            },
-          ],
-        },
+        user: { id: 'user-id-123' },
       });
 
       mockJwtSignAsync
@@ -233,11 +215,11 @@ describe('AuthService', () => {
         accessToken: 'mock_new_access_token',
         refreshToken: 'mock_new_refresh_token_jwt',
       });
-      expect(mockJwtVerifyAsync).toHaveBeenCalledWith('token_value', {
-        secret: 'test-secret',
-        issuer: REFRESH_TOKEN_ISSUER,
-        audience: REFRESH_TOKEN_AUDIENCE,
-      });
+      expect(mockJwtSignAsync).toHaveBeenNthCalledWith(
+        1,
+        { sub: 'user-id-123', userId: 'user-id-123' },
+        expect.objectContaining({ expiresIn: '15m' }),
+      );
       expect(mockRefreshToken.delete).toHaveBeenCalledWith({
         where: { id: 'token-id-123' },
       });
