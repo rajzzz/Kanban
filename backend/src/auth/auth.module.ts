@@ -4,19 +4,24 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import {
+  ACCESS_TOKEN_AUDIENCE,
+  ACCESS_TOKEN_ISSUER,
+  getAccessTokenSecret,
+} from './auth-token.config';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       useFactory: () => {
-        const secret = process.env.JWT_SECRET;
-        if (!secret) {
-          throw new Error('JWT_SECRET environment variable is not defined');
-        }
         return {
-          secret,
-          signOptions: { expiresIn: '15m' },
+          secret: getAccessTokenSecret(),
+          signOptions: {
+            expiresIn: '15m',
+            issuer: ACCESS_TOKEN_ISSUER,
+            audience: ACCESS_TOKEN_AUDIENCE,
+          },
         };
       },
     }),

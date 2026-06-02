@@ -9,10 +9,21 @@ import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
+import {
+  ACCESS_TOKEN_AUDIENCE,
+  ACCESS_TOKEN_ISSUER,
+  REFRESH_TOKEN_AUDIENCE,
+  REFRESH_TOKEN_ISSUER,
+  getAccessTokenSecret,
+  getRefreshTokenSecret,
+  hashRefreshTokenValue,
+  matchesRefreshTokenHash,
+} from './auth-token.config';
 
 interface RefreshTokenPayload {
   sub: string;
-  tokenId: string;
+  jti?: string;
+  tokenId?: string;
 }
 
 @Injectable()
@@ -123,7 +134,10 @@ export class AuthService {
       role,
     };
     const accessToken = await this.jwtService.signAsync(accessTokenPayload, {
+      secret: getAccessTokenSecret(),
       expiresIn: '15m',
+      issuer: ACCESS_TOKEN_ISSUER,
+      audience: ACCESS_TOKEN_AUDIENCE,
     });
 
     // 5. Generate Refresh Token in database first
@@ -132,12 +146,16 @@ export class AuthService {
 
     // Generate signed JWT for the refresh token
     const refreshTokenValue = await this.jwtService.signAsync(
-      { sub: user.id, tokenId: refreshTokenId },
-      { expiresIn: '7d' },
+      { sub: user.id, jti: refreshTokenId },
+      {
+        secret: getRefreshTokenSecret(),
+        expiresIn: '7d',
+        issuer: REFRESH_TOKEN_ISSUER,
+        audience: REFRESH_TOKEN_AUDIENCE,
+      },
     );
 
-    // Hash the Refresh Token JWT with bcrypt (10 rounds)
-    const refreshTokenHash = await bcrypt.hash(refreshTokenValue, 10);
+    const refreshTokenHash = hashRefreshTokenValue(refreshTokenValue);
 
     // 6. Save the Refresh Token in the database
     await this.prisma.refreshToken.create({
@@ -162,13 +180,18 @@ export class AuthService {
     try {
       payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(
         refreshTokenJwt,
-        { secret: process.env.JWT_SECRET },
+        {
+          secret: getRefreshTokenSecret(),
+          issuer: REFRESH_TOKEN_ISSUER,
+          audience: REFRESH_TOKEN_AUDIENCE,
+        },
       );
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const { tokenId, sub: userId } = payload;
+    const tokenId = payload.jti ?? payload.tokenId;
+    const { sub: userId } = payload;
     if (!tokenId || !userId) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -191,8 +214,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Verify token hash matches using bcrypt
-    const isHashValid = await bcrypt.compare(refreshTokenJwt, record.tokenHash);
+    const isHashValid = matchesRefreshTokenHash(
+      refreshTokenJwt,
+      record.tokenHash,
+    );
     if (!isHashValid) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -217,16 +242,24 @@ export class AuthService {
       role,
     };
     const accessToken = await this.jwtService.signAsync(accessTokenPayload, {
+      secret: getAccessTokenSecret(),
       expiresIn: '15m',
+      issuer: ACCESS_TOKEN_ISSUER,
+      audience: ACCESS_TOKEN_AUDIENCE,
     });
 
     // Sign new Refresh Token JWT
     const newRefreshTokenValue = await this.jwtService.signAsync(
-      { sub: record.userId, tokenId: newRefreshTokenId },
-      { expiresIn: '7d' },
+      { sub: record.userId, jti: newRefreshTokenId },
+      {
+        secret: getRefreshTokenSecret(),
+        expiresIn: '7d',
+        issuer: REFRESH_TOKEN_ISSUER,
+        audience: REFRESH_TOKEN_AUDIENCE,
+      },
     );
 
-    const hashedNewRefreshToken = await bcrypt.hash(newRefreshTokenValue, 10);
+    const hashedNewRefreshToken = hashRefreshTokenValue(newRefreshTokenValue);
 
     await this.prisma.$transaction(async (tx) => {
       // Delete old token
@@ -255,11 +288,16 @@ export class AuthService {
     try {
       const payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(
         refreshTokenJwt,
-        { secret: process.env.JWT_SECRET },
+        {
+          secret: getRefreshTokenSecret(),
+          issuer: REFRESH_TOKEN_ISSUER,
+          audience: REFRESH_TOKEN_AUDIENCE,
+        },
       );
-      if (payload?.tokenId) {
+      const tokenId = payload.jti ?? payload.tokenId;
+      if (tokenId) {
         await this.prisma.refreshToken.deleteMany({
-          where: { id: payload.tokenId },
+          where: { id: tokenId },
         });
       }
     } catch {

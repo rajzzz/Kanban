@@ -4,6 +4,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import {
+  ACCESS_TOKEN_AUDIENCE,
+  ACCESS_TOKEN_ISSUER,
+  REFRESH_TOKEN_AUDIENCE,
+  REFRESH_TOKEN_ISSUER,
+  hashRefreshTokenValue,
+} from './auth-token.config';
 
 jest.mock('bcrypt');
 
@@ -41,10 +48,20 @@ const mockJwtService = {
   verifyAsync: mockJwtVerifyAsync,
 };
 
+function getCreateRefreshTokenCall(index: number): {
+  data: { tokenHash: string };
+} {
+  const calls = mockRefreshToken.create.mock.calls as Array<
+    [{ data: { tokenHash: string } }]
+  >;
+  return calls[index][0];
+}
+
 describe('AuthService', () => {
   let service: AuthService;
 
   beforeEach(async () => {
+    process.env.JWT_SECRET = 'test-secret';
     mockTransaction.mockImplementation(
       (cb: (tx: typeof mockPrismaService) => Promise<unknown>) =>
         cb(mockPrismaService),
@@ -131,9 +148,17 @@ describe('AuthService', () => {
           workspaceId: 'workspace-id-456',
           role: 'OWNER',
         },
-        { expiresIn: '15m' },
+        {
+          secret: 'test-secret',
+          expiresIn: '15m',
+          issuer: ACCESS_TOKEN_ISSUER,
+          audience: ACCESS_TOKEN_AUDIENCE,
+        },
       );
       expect(mockRefreshToken.create).toHaveBeenCalled();
+      expect(getCreateRefreshTokenCall(0).data.tokenHash).toBe(
+        hashRefreshTokenValue('mock_refresh_token_jwt'),
+      );
     });
   });
 
@@ -149,7 +174,7 @@ describe('AuthService', () => {
     it('should throw UnauthorizedException if refresh token is not found in DB', async () => {
       mockJwtVerifyAsync.mockResolvedValue({
         sub: 'user-id-123',
-        tokenId: 'token-id-123',
+        jti: 'token-id-123',
       });
       mockRefreshToken.findUnique.mockResolvedValue(null);
 
@@ -158,10 +183,10 @@ describe('AuthService', () => {
       );
     });
 
-    it('should throw UnauthorizedException if bcrypt hash does not match', async () => {
+    it('should throw UnauthorizedException if refresh token hash does not match', async () => {
       mockJwtVerifyAsync.mockResolvedValue({
         sub: 'user-id-123',
-        tokenId: 'token-id-123',
+        jti: 'token-id-123',
       });
       mockRefreshToken.findUnique.mockResolvedValue({
         id: 'token-id-123',
@@ -170,7 +195,6 @@ describe('AuthService', () => {
         revoked: false,
         user: { memberships: [] },
       });
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(service.refresh('token_value')).rejects.toThrow(
         UnauthorizedException,
@@ -180,11 +204,11 @@ describe('AuthService', () => {
     it('should rotate tokens and delete old token on successful refresh', async () => {
       mockJwtVerifyAsync.mockResolvedValue({
         sub: 'user-id-123',
-        tokenId: 'token-id-123',
+        jti: 'token-id-123',
       });
       mockRefreshToken.findUnique.mockResolvedValue({
         id: 'token-id-123',
-        tokenHash: 'hashed_token',
+        tokenHash: hashRefreshTokenValue('token_value'),
         expiresAt: new Date(Date.now() + 100000),
         revoked: false,
         userId: 'user-id-123',
@@ -198,8 +222,6 @@ describe('AuthService', () => {
           ],
         },
       });
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed_new_refresh_token');
 
       mockJwtSignAsync
         .mockResolvedValueOnce('mock_new_access_token')
@@ -211,10 +233,18 @@ describe('AuthService', () => {
         accessToken: 'mock_new_access_token',
         refreshToken: 'mock_new_refresh_token_jwt',
       });
+      expect(mockJwtVerifyAsync).toHaveBeenCalledWith('token_value', {
+        secret: 'test-secret',
+        issuer: REFRESH_TOKEN_ISSUER,
+        audience: REFRESH_TOKEN_AUDIENCE,
+      });
       expect(mockRefreshToken.delete).toHaveBeenCalledWith({
         where: { id: 'token-id-123' },
       });
       expect(mockRefreshToken.create).toHaveBeenCalled();
+      expect(getCreateRefreshTokenCall(0).data.tokenHash).toBe(
+        hashRefreshTokenValue('mock_new_refresh_token_jwt'),
+      );
     });
   });
 
@@ -222,14 +252,16 @@ describe('AuthService', () => {
     it('should delete the refresh token from the database if verification succeeds', async () => {
       mockJwtVerifyAsync.mockResolvedValue({
         sub: 'user-id-123',
-        tokenId: 'token-id-123',
+        jti: 'token-id-123',
       });
       mockRefreshToken.deleteMany.mockResolvedValue({ count: 1 });
 
       await service.logout('valid_token_value');
 
       expect(mockJwtVerifyAsync).toHaveBeenCalledWith('valid_token_value', {
-        secret: process.env.JWT_SECRET,
+        secret: 'test-secret',
+        issuer: REFRESH_TOKEN_ISSUER,
+        audience: REFRESH_TOKEN_AUDIENCE,
       });
       expect(mockRefreshToken.deleteMany).toHaveBeenCalledWith({
         where: { id: 'token-id-123' },
