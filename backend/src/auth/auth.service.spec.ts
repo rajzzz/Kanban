@@ -20,6 +20,7 @@ const mockRefreshToken = {
   create: jest.fn(),
   findUnique: jest.fn(),
   delete: jest.fn(),
+  deleteMany: jest.fn(),
 };
 const mockTransaction = jest.fn();
 
@@ -214,6 +215,34 @@ describe('AuthService', () => {
         where: { id: 'token-id-123' },
       });
       expect(mockRefreshToken.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('logout', () => {
+    it('should delete the refresh token from the database if verification succeeds', async () => {
+      mockJwtVerifyAsync.mockResolvedValue({
+        sub: 'user-id-123',
+        tokenId: 'token-id-123',
+      });
+      mockRefreshToken.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.logout('valid_token_value');
+
+      expect(mockJwtVerifyAsync).toHaveBeenCalledWith('valid_token_value', {
+        secret: process.env.JWT_SECRET,
+      });
+      expect(mockRefreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'token-id-123' },
+      });
+    });
+
+    it('should swallow any exceptions and return void if verification fails', async () => {
+      mockJwtVerifyAsync.mockRejectedValue(new Error('Invalid token'));
+
+      await expect(
+        service.logout('invalid_token_value'),
+      ).resolves.not.toThrow();
+      expect(mockRefreshToken.deleteMany).not.toHaveBeenCalled();
     });
   });
 });

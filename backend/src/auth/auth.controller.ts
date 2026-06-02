@@ -94,6 +94,53 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    return {
+      success: true,
+    };
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @Req() req: express.Request,
+    @Res({ passthrough: true }) res: express.Response,
+  ) {
+    // Extract refresh token from cookies manually
+    let refreshToken: string | undefined;
+    if (req.headers.cookie) {
+      const cookies = req.headers.cookie.split(';').reduce(
+        (acc, cookie) => {
+          const [key, ...valueParts] = cookie.trim().split('=');
+          if (key) {
+            acc[key] = valueParts.join('=');
+          }
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
+      refreshToken = cookies['refresh_token'];
+    }
+
+    if (refreshToken) {
+      await this.authService.logout(refreshToken);
+    }
+
+    // Clear access_token cookie
+    res.cookie('access_token', '', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 0,
+    });
+
+    // Clear refresh_token cookie
+    res.cookie('refresh_token', '', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 0,
+    });
+
     return { success: true };
   }
 }

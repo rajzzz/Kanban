@@ -250,4 +250,20 @@ export class AuthService {
       refreshToken: newRefreshTokenValue,
     };
   }
+
+  async logout(refreshTokenJwt: string) {
+    try {
+      const payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(
+        refreshTokenJwt,
+        { secret: process.env.JWT_SECRET },
+      );
+      if (payload?.tokenId) {
+        await this.prisma.refreshToken.deleteMany({
+          where: { id: payload.tokenId },
+        });
+      }
+    } catch {
+      // Ignore token verification errors or missing records during logout
+    }
+  }
 }
