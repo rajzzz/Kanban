@@ -22,8 +22,7 @@ import {
 
 interface RefreshTokenPayload {
   sub: string;
-  jti?: string;
-  tokenId?: string;
+  jti: string;
 }
 
 @Injectable()
@@ -190,7 +189,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const tokenId = payload.jti ?? payload.tokenId;
+    const tokenId = payload.jti;
     const { sub: userId } = payload;
     if (!tokenId || !userId) {
       throw new UnauthorizedException('Invalid or expired refresh token');
@@ -294,7 +293,7 @@ export class AuthService {
           audience: REFRESH_TOKEN_AUDIENCE,
         },
       );
-      const tokenId = payload.jti ?? payload.tokenId;
+      const tokenId = payload.jti;
       if (tokenId) {
         await this.prisma.refreshToken.deleteMany({
           where: { id: tokenId },
