@@ -65,4 +65,42 @@ export class WorkspaceService {
       };
     });
   }
+
+  async findAllForUserInOrg(userId: string, organizationId: string) {
+    // 1. Verify user belongs to organization
+    const orgMember = await this.prisma.organizationMember.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId,
+          userId,
+        },
+      },
+    });
+
+    if (!orgMember) {
+      throw new ForbiddenException('You are not a member of this organization');
+    }
+
+    // 2. Fetch workspaces inside this organization that the user is a member of.
+    // If user's role is OWNER or ADMIN, they have full access to all workspaces in the org.
+    // If they are a regular MEMBER, they only see workspaces they are explicitly joined to.
+    if (orgMember.role === 'OWNER' || orgMember.role === 'ADMIN') {
+      return this.prisma.workspace.findMany({
+        where: { organizationId },
+        orderBy: { name: 'asc' },
+      });
+    } else {
+      return this.prisma.workspace.findMany({
+        where: {
+          organizationId,
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+        orderBy: { name: 'asc' },
+      });
+    }
+  }
 }

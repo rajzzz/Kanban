@@ -14,6 +14,7 @@ describe('WorkspaceService', () => {
     },
     workspace: {
       create: jest.fn(),
+      findMany: jest.fn(),
     },
     workspaceMember: {
       create: jest.fn(),
@@ -133,6 +134,61 @@ describe('WorkspaceService', () => {
           name: 'Default Workspace',
         }),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('findAllForUserInOrg', () => {
+    it('should throw ForbiddenException if user does not belong to the organization', async () => {
+      mockPrismaService.organizationMember.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.findAllForUserInOrg('user-id-456', 'org-id-123'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should return all workspaces in organization if user is OWNER or ADMIN', async () => {
+      mockPrismaService.organizationMember.findUnique.mockResolvedValue({
+        organizationId: 'org-id-123',
+        userId: 'user-id-456',
+        role: 'OWNER',
+      });
+      
+      const mockWorkspaces = [{ id: 'w-1', name: 'Work A' }, { id: 'w-2', name: 'Work B' }];
+      mockPrismaService.workspace.findMany.mockResolvedValue(mockWorkspaces);
+
+      const result = await service.findAllForUserInOrg('user-id-456', 'org-id-123');
+
+      expect(result).toEqual(mockWorkspaces);
+      expect(mockPrismaService.workspace.findMany).toHaveBeenCalledWith({
+        where: { organizationId: 'org-id-123' },
+        orderBy: { name: 'asc' },
+      });
+    });
+
+    it('should return only joined workspaces if user is a standard MEMBER', async () => {
+      mockPrismaService.organizationMember.findUnique.mockResolvedValue({
+        organizationId: 'org-id-123',
+        userId: 'user-id-456',
+        role: 'MEMBER',
+      });
+      
+      const mockWorkspaces = [{ id: 'w-1', name: 'Work A' }];
+      mockPrismaService.workspace.findMany.mockResolvedValue(mockWorkspaces);
+
+      const result = await service.findAllForUserInOrg('user-id-456', 'org-id-123');
+
+      expect(result).toEqual(mockWorkspaces);
+      expect(mockPrismaService.workspace.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: 'org-id-123',
+          members: {
+            some: {
+              userId: 'user-id-456',
+            },
+          },
+        },
+        orderBy: { name: 'asc' },
+      });
     });
   });
 });

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, UseGuards, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
 import { WorkspaceService } from './workspace.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -16,5 +16,17 @@ export class WorkspaceController {
     @Body() dto: CreateWorkspaceDto,
   ) {
     return this.workspaceService.create(user.userId, dto);
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async findAll(
+    @CurrentUser() user: any,
+    @Query('organizationId') organizationId: string,
+  ) {
+    if (!organizationId) {
+      throw new BadRequestException('organizationId query parameter is required');
+    }
+    return this.workspaceService.findAllForUserInOrg(user.userId, organizationId);
   }
 }

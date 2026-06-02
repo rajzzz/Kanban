@@ -31,12 +31,15 @@ describe('AuthService', () => {
     },
     refreshToken: {
       create: jest.fn(),
+      findUnique: jest.fn(),
+      delete: jest.fn(),
     },
     $transaction: jest.fn((cb) => cb(mockPrismaService)),
   };
 
   const mockJwtService = {
     signAsync: jest.fn(),
+    verifyAsync: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -96,7 +99,12 @@ describe('AuthService', () => {
       mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashed_refresh_token');
-      mockJwtService.signAsync.mockResolvedValue('mock_access_token');
+      
+      // signAsync called twice: once for access token, once for refresh token JWT
+      mockJwtService.signAsync
+        .mockResolvedValueOnce('mock_access_token')
+        .mockResolvedValueOnce('mock_refresh_token_jwt');
+
       mockPrismaService.refreshToken.create.mockResolvedValue({ id: 'rt-id' });
 
       const result = await service.login({
@@ -105,7 +113,7 @@ describe('AuthService', () => {
       });
 
       expect(result).toHaveProperty('accessToken', 'mock_access_token');
-      expect(result).toHaveProperty('refreshToken');
+      expect(result).toHaveProperty('refreshToken', 'mock_refresh_token_jwt');
       expect(result).toHaveProperty('expiresAt');
       expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
         where: { email: 'test@example.com' },
@@ -115,7 +123,8 @@ describe('AuthService', () => {
           },
         },
       });
-      expect(mockJwtService.signAsync).toHaveBeenCalledWith(
+      expect(mockJwtService.signAsync).toHaveBeenNthCalledWith(
+        1,
         {
           sub: 'user-id-123',
           userId: 'user-id-123',
@@ -124,6 +133,74 @@ describe('AuthService', () => {
         },
         { expiresIn: '15m' },
       );
+      expect(mockPrismaService.refreshToken.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('refresh', () => {
+    it('should throw UnauthorizedException if token verification fails', async () => {
+      mockJwtService.verifyAsync.mockRejectedValue(new Error('Invalid token'));
+
+      await expect(service.refresh('invalid_token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException if refresh token is not found in DB', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: 'user-id-123', tokenId: 'token-id-123' });
+      mockPrismaService.refreshToken.findUnique.mockResolvedValue(null);
+
+      await expect(service.refresh('token_value')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw UnauthorizedException if bcrypt hash does not match', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: 'user-id-123', tokenId: 'token-id-123' });
+      mockPrismaService.refreshToken.findUnique.mockResolvedValue({
+        id: 'token-id-123',
+        tokenHash: 'different_hash',
+        expiresAt: new Date(Date.now() + 100000),
+        revoked: false,
+        user: { memberships: [] },
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(service.refresh('token_value')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should rotate tokens and delete old token on successful refresh', async () => {
+      const mockRecord = {
+        id: 'token-id-123',
+        tokenHash: 'hashed_token',
+        expiresAt: new Date(Date.now() + 100000),
+        revoked: false,
+        userId: 'user-id-123',
+        user: {
+          memberships: [
+            {
+              workspaceId: 'workspace-id-456',
+              role: 'OWNER',
+              joinedAt: new Date(),
+            },
+          ],
+        },
+      };
+
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: 'user-id-123', tokenId: 'token-id-123' });
+      mockPrismaService.refreshToken.findUnique.mockResolvedValue(mockRecord);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed_new_refresh_token');
+
+      mockJwtService.signAsync
+        .mockResolvedValueOnce('mock_new_access_token')
+        .mockResolvedValueOnce('mock_new_refresh_token_jwt');
+
+      const result = await service.refresh('token_value');
+
+      expect(result).toEqual({
+        accessToken: 'mock_new_access_token',
+        refreshToken: 'mock_new_refresh_token_jwt',
+      });
+      expect(mockPrismaService.refreshToken.delete).toHaveBeenCalledWith({
+        where: { id: 'token-id-123' },
+      });
       expect(mockPrismaService.refreshToken.create).toHaveBeenCalled();
     });
   });

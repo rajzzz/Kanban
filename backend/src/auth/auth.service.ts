@@ -108,16 +108,23 @@ export class AuthService {
       expiresIn: '15m',
     });
 
-    // 5. Generate a random UUID Refresh Token (7-day expiry)
-    const refreshTokenValue = randomUUID();
+    // 5. Generate Refresh Token in database first
+    const refreshTokenId = randomUUID();
     const refreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-    // Hash the Refresh Token with bcrypt (10 rounds)
+    // Generate signed JWT for the refresh token
+    const refreshTokenValue = await this.jwtService.signAsync(
+      { sub: user.id, tokenId: refreshTokenId },
+      { expiresIn: '7d' },
+    );
+
+    // Hash the Refresh Token JWT with bcrypt (10 rounds)
     const refreshTokenHash = await bcrypt.hash(refreshTokenValue, 10);
 
     // 6. Save the Refresh Token in the database
     await this.prisma.refreshToken.create({
       data: {
+        id: refreshTokenId,
         tokenHash: refreshTokenHash,
         expiresAt: refreshTokenExpiry,
         userId: user.id,
@@ -129,6 +136,95 @@ export class AuthService {
       accessToken,
       refreshToken: refreshTokenValue,
       expiresAt: refreshTokenExpiry,
+    };
+  }
+
+  async refresh(refreshTokenJwt: string) {
+    let payload: any;
+    try {
+      payload = await this.jwtService.verifyAsync(refreshTokenJwt, {
+        secret: process.env.JWT_SECRET,
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const { tokenId, sub: userId } = payload;
+    if (!tokenId || !userId) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    // Retrieve the token from database
+    const record = await this.prisma.refreshToken.findUnique({
+      where: { id: tokenId },
+      include: {
+        user: {
+          include: {
+            memberships: {
+              orderBy: { joinedAt: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    if (!record || record.revoked || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    // Verify token hash matches using bcrypt
+    const isHashValid = await bcrypt.compare(refreshTokenJwt, record.tokenHash);
+    if (!isHashValid) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    // Rotate token - delete old token and create new pair
+    const newRefreshTokenId = randomUUID();
+    const newRefreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const primaryMembership = record.user.memberships[0];
+    const workspaceId = primaryMembership ? primaryMembership.workspaceId : null;
+    const role = primaryMembership ? primaryMembership.role : null;
+
+    // Sign new Access Token
+    const accessTokenPayload = {
+      sub: record.userId,
+      userId: record.userId,
+      workspaceId,
+      role,
+    };
+    const accessToken = await this.jwtService.signAsync(accessTokenPayload, {
+      expiresIn: '15m',
+    });
+
+    // Sign new Refresh Token JWT
+    const newRefreshTokenValue = await this.jwtService.signAsync(
+      { sub: record.userId, tokenId: newRefreshTokenId },
+      { expiresIn: '7d' },
+    );
+
+    const hashedNewRefreshToken = await bcrypt.hash(newRefreshTokenValue, 10);
+
+    await this.prisma.$transaction(async (tx) => {
+      // Delete old token
+      await tx.refreshToken.delete({
+        where: { id: tokenId },
+      });
+
+      // Insert new token
+      await tx.refreshToken.create({
+        data: {
+          id: newRefreshTokenId,
+          tokenHash: hashedNewRefreshToken,
+          expiresAt: newRefreshTokenExpiry,
+          userId: record.userId,
+        },
+      });
+    });
+
+    return {
+      accessToken,
+      refreshToken: newRefreshTokenValue,
     };
   }
 }
