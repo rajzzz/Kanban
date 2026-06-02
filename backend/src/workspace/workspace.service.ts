@@ -232,6 +232,7 @@ export class WorkspaceService {
 
     const invite = await this.prisma.workspaceInvite.findFirst({
       where: { tokenPrefix, tokenHash },
+      include: { workspace: true },
     });
 
     if (!invite) {
@@ -271,6 +272,27 @@ export class WorkspaceService {
         throw new ConflictException(
           'You are already a member of this workspace',
         );
+      }
+
+      // Check if they are already in the organization, if not, add them as MEMBER
+      const orgId = invite.workspace.organizationId;
+      const existingOrgMember = await tx.organizationMember.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: orgId,
+            userId: memberId,
+          },
+        },
+      });
+
+      if (!existingOrgMember) {
+        await tx.organizationMember.create({
+          data: {
+            organizationId: orgId,
+            userId: memberId,
+            role: 'MEMBER',
+          },
+        });
       }
 
       const member = await tx.workspaceMember.create({

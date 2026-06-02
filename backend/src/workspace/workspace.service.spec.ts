@@ -16,6 +16,7 @@ import { WorkspaceRole } from '../../generated/prisma/client';
 const mockOrgMember = {
   findFirst: jest.fn(),
   findUnique: jest.fn(),
+  create: jest.fn(),
 };
 const mockWorkspace = {
   create: jest.fn(),
@@ -388,9 +389,18 @@ describe('WorkspaceService', () => {
         workspaceId: 'ws-1',
         role: WorkspaceRole.MEMBER,
         expiresAt: FUTURE_DATE,
+        workspace: {
+          organizationId: 'org-1',
+        },
       });
       mockUser.findUnique.mockResolvedValue({ id: 'user-abc' });
       mockWorkspaceMember.findUnique.mockResolvedValue(null); // not already a member
+      mockOrgMember.findUnique.mockResolvedValue(null); // not already an org member
+      mockOrgMember.create.mockResolvedValue({
+        organizationId: 'org-1',
+        userId: 'user-abc',
+        role: 'MEMBER',
+      });
       mockWorkspaceMember.create.mockResolvedValue({
         workspaceId: 'ws-1',
         userId: 'user-abc',
@@ -414,10 +424,73 @@ describe('WorkspaceService', () => {
           role: WorkspaceRole.MEMBER,
         },
       });
+      expect(mockOrgMember.findUnique).toHaveBeenCalledWith({
+        where: {
+          organizationId_userId: {
+            organizationId: 'org-1',
+            userId: 'user-abc',
+          },
+        },
+      });
+      expect(mockOrgMember.create).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+          userId: 'user-abc',
+          role: 'MEMBER',
+        },
+      });
       expect(mockWorkspaceInvite.update).toHaveBeenCalledWith({
         where: { id: 'inv-1' },
         data: { status: 'ACCEPTED' },
       });
+    });
+
+    it('should not create organization membership if already a member of the organization', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        workspaceId: 'ws-1',
+        inviteeEmail: 'invitee@test.com',
+      });
+      mockWorkspaceInvite.findFirst.mockResolvedValue({
+        id: 'inv-1',
+        status: 'PENDING',
+        workspaceId: 'ws-1',
+        role: WorkspaceRole.MEMBER,
+        expiresAt: FUTURE_DATE,
+        workspace: {
+          organizationId: 'org-1',
+        },
+      });
+      mockUser.findUnique.mockResolvedValue({ id: 'user-abc' });
+      mockWorkspaceMember.findUnique.mockResolvedValue(null);
+      mockOrgMember.findUnique.mockResolvedValue({
+        organizationId: 'org-1',
+        userId: 'user-abc',
+        role: 'MEMBER',
+      });
+      mockWorkspaceMember.create.mockResolvedValue({
+        workspaceId: 'ws-1',
+        userId: 'user-abc',
+        role: WorkspaceRole.MEMBER,
+      });
+      mockWorkspaceInvite.update.mockResolvedValue({
+        id: 'inv-1',
+        status: 'ACCEPTED',
+      });
+
+      const result = await service.acceptInvite('user-1', {
+        token: VALID_TOKEN,
+      });
+
+      expect(result.member).toHaveProperty('workspaceId', 'ws-1');
+      expect(mockOrgMember.findUnique).toHaveBeenCalledWith({
+        where: {
+          organizationId_userId: {
+            organizationId: 'org-1',
+            userId: 'user-abc',
+          },
+        },
+      });
+      expect(mockOrgMember.create).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException if user is already a member', async () => {
@@ -431,6 +504,9 @@ describe('WorkspaceService', () => {
         workspaceId: 'ws-1',
         role: WorkspaceRole.MEMBER,
         expiresAt: FUTURE_DATE,
+        workspace: {
+          organizationId: 'org-1',
+        },
       });
       mockUser.findUnique.mockResolvedValue({ id: 'user-abc' });
       mockWorkspaceMember.findUnique.mockResolvedValue({

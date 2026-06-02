@@ -7,7 +7,9 @@ async function run() {
     await prisma.onModuleInit();
     const count = await prisma.user.count();
     console.log('USER COUNT IN DATABASE:', count);
-    const users = await prisma.user.findMany({ select: { id: true, email: true } });
+    const users = await prisma.user.findMany({
+      select: { id: true, email: true },
+    });
     console.log('USERS:', users);
   } catch (err) {
     console.error('Error running script:', err);
