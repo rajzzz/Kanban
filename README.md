@@ -28,6 +28,116 @@ Authentication is **JWT + HttpOnly cookie**. Every route is protected by `JwtAut
 
 ---
 
+## Database schema
+
+The PostgreSQL database schema is managed via Prisma. Here is the Entity-Relationship (ER) diagram showing the relations between users, organizations, workspaces, projects, tasks, and system components:
+
+```mermaid
+erDiagram
+    User {
+        String id PK
+        String email UK
+        String passwordHash
+        String firstName
+        String lastName
+        DateTime createdAt
+        DateTime updatedAt
+    }
+
+    Organization {
+        String id PK
+        String name
+        DateTime createdAt
+        DateTime updatedAt
+    }
+
+    OrganizationMember {
+        String id PK
+        OrganizationRole role "default: MEMBER"
+        DateTime joinedAt
+        String organizationId FK
+        String userId FK
+    }
+
+    Workspace {
+        String id PK
+        String name
+        String description
+        DateTime createdAt
+        DateTime updatedAt
+        String organizationId FK
+    }
+
+    WorkspaceMember {
+        String id PK
+        WorkspaceRole role "default: MEMBER"
+        DateTime joinedAt
+        String workspaceId FK
+        String userId FK
+    }
+
+    Project {
+        String id PK
+        String name
+        String description
+        DateTime createdAt
+        DateTime updatedAt
+        String workspaceId FK
+    }
+
+    Task {
+        String id PK
+        String title
+        String description
+        TaskStatus status "default: TODO"
+        TaskPriority priority "default: MEDIUM"
+        String_array tags
+        DateTime dueDate
+        DateTime createdAt
+        DateTime updatedAt
+        String projectId FK
+        String creatorId FK
+        String assigneeId FK
+    }
+
+    WorkspaceInvite {
+        String id PK
+        String email
+        WorkspaceRole role "default: MEMBER"
+        String tokenHash
+        String tokenPrefix UK
+        InviteStatus status "default: PENDING"
+        DateTime expiresAt
+        DateTime createdAt
+        String workspaceId FK
+        String invitedById FK
+    }
+
+    RefreshToken {
+        String id PK
+        String tokenHash
+        Boolean revoked "default: false"
+        DateTime expiresAt
+        DateTime createdAt
+        String userId FK
+    }
+
+    User ||--o{ OrganizationMember : "organizations"
+    Organization ||--o{ OrganizationMember : "members"
+    Organization ||--o{ Workspace : "workspaces"
+    User ||--o{ WorkspaceMember : "memberships"
+    Workspace ||--o{ WorkspaceMember : "members"
+    Workspace ||--o{ Project : "projects"
+    Project ||--o{ Task : "tasks"
+    User ||--o{ Task : "createdTasks"
+    User ||--o{ Task : "assignedTasks"
+    Workspace ||--o{ WorkspaceInvite : "invites"
+    User ||--o{ WorkspaceInvite : "sentInvites"
+    User ||--o{ RefreshToken : "refreshTokens"
+```
+
+---
+
 ## Route decisions & spec deviations
 
 ### POST /tasks/:taskId/assign — malformed route corrected

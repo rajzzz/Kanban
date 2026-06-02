@@ -541,7 +541,18 @@ describe('WorkspaceService', () => {
       expect(result).toEqual(mockMembers);
       expect(mockWorkspaceMember.findMany).toHaveBeenCalledWith({
         where: { workspaceId: 'ws-1' },
-        include: { user: true },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
+        },
         orderBy: { joinedAt: 'asc' },
       });
     });
@@ -594,7 +605,18 @@ describe('WorkspaceService', () => {
       expect(mockWorkspaceMember.update).toHaveBeenCalledWith({
         where: { workspaceId_userId: { workspaceId: 'ws-1', userId: 'u-1' } },
         data: { role: WorkspaceRole.MEMBER },
-        include: { user: true },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
+        },
       });
     });
   });

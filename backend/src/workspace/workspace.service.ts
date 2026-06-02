@@ -320,7 +320,18 @@ export class WorkspaceService {
     // Single query with user details — no N+1
     return this.prisma.workspaceMember.findMany({
       where: { workspaceId },
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
       orderBy: { joinedAt: 'asc' },
     });
   }
@@ -362,7 +373,18 @@ export class WorkspaceService {
         workspaceId_userId: { workspaceId, userId: targetUserId },
       },
       data: { role: dto.role },
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
     });
   }
 
