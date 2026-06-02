@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -6,12 +10,17 @@ import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 
+interface RefreshTokenPayload {
+  sub: string;
+  tokenId: string;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) { }
+  ) {}
 
   async register(dto: RegisterDto) {
     const email = dto.email.toLowerCase().trim();
@@ -21,14 +30,17 @@ export class AuthService {
       where: { email },
     });
     if (existingUser) {
-      throw new ConflictException('A user with this email address already exists');
+      throw new ConflictException(
+        'A user with this email address already exists',
+      );
     }
 
     // Hash the password with bcrypt (10 rounds)
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
     // Set default organization name if not provided
-    const organizationName = dto.organizationName?.trim() || `${dto.firstName || 'My'} Organization`;
+    const organizationName =
+      dto.organizationName?.trim() || `${dto.firstName || 'My'} Organization`;
 
     const { user } = await this.prisma.$transaction(async (tx) => {
       // 1. Create Organization
@@ -61,7 +73,8 @@ export class AuthService {
     });
 
     // Omit passwordHash from the response payload
-    const { passwordHash: _, ...safeUser } = user;
+    const { passwordHash: _pw, ...safeUser } = user;
+    void _pw;
     return safeUser;
   }
 
@@ -85,7 +98,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      user.passwordHash,
+    );
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -93,7 +109,9 @@ export class AuthService {
     // 3. Determine workspaceId and role for the payload
     // Get their primary workspace ID and role
     const primaryMembership = user.memberships[0];
-    const workspaceId = primaryMembership ? primaryMembership.workspaceId : null;
+    const workspaceId = primaryMembership
+      ? primaryMembership.workspaceId
+      : null;
     const role = primaryMembership ? primaryMembership.role : null;
 
     // 4. Generate Access Token JWT (15-min expiry)
@@ -140,11 +158,12 @@ export class AuthService {
   }
 
   async refresh(refreshTokenJwt: string) {
-    let payload: any;
+    let payload: RefreshTokenPayload;
     try {
-      payload = await this.jwtService.verifyAsync(refreshTokenJwt, {
-        secret: process.env.JWT_SECRET,
-      });
+      payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(
+        refreshTokenJwt,
+        { secret: process.env.JWT_SECRET },
+      );
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -180,10 +199,14 @@ export class AuthService {
 
     // Rotate token - delete old token and create new pair
     const newRefreshTokenId = randomUUID();
-    const newRefreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const newRefreshTokenExpiry = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000,
+    ); // 7 days
 
     const primaryMembership = record.user.memberships[0];
-    const workspaceId = primaryMembership ? primaryMembership.workspaceId : null;
+    const workspaceId = primaryMembership
+      ? primaryMembership.workspaceId
+      : null;
     const role = primaryMembership ? primaryMembership.role : null;
 
     // Sign new Access Token

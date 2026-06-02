@@ -35,7 +35,10 @@ export class WorkspaceService {
         },
       });
 
-      if (!orgMember || (orgMember.role !== 'OWNER' && orgMember.role !== 'ADMIN')) {
+      if (
+        !orgMember ||
+        (orgMember.role !== 'OWNER' && orgMember.role !== 'ADMIN')
+      ) {
         throw new ForbiddenException(
           'You must be an Owner or Admin of this organization to create a workspace',
         );
@@ -47,7 +50,7 @@ export class WorkspaceService {
       const workspace = await tx.workspace.create({
         data: {
           name: dto.name.trim(),
-          organizationId: orgId!,
+          organizationId: orgId,
         },
       });
 

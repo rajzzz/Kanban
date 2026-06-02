@@ -3,26 +3,34 @@ import { WorkspaceService } from './workspace.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ForbiddenException } from '@nestjs/common';
 
+// Typed mock helpers — extracted so ESLint sees them as jest.Mock, not `any` members
+const mockOrgMember = {
+  findFirst: jest.fn(),
+  findUnique: jest.fn(),
+};
+const mockWorkspace = {
+  create: jest.fn(),
+  findMany: jest.fn(),
+};
+const mockWorkspaceMember = { create: jest.fn() };
+const mockTransaction = jest.fn();
+
+const mockPrismaService = {
+  organizationMember: mockOrgMember,
+  workspace: mockWorkspace,
+  workspaceMember: mockWorkspaceMember,
+  $transaction: mockTransaction,
+};
+
 describe('WorkspaceService', () => {
   let service: WorkspaceService;
-  let prisma: PrismaService;
-
-  const mockPrismaService = {
-    organizationMember: {
-      findFirst: jest.fn(),
-      findUnique: jest.fn(),
-    },
-    workspace: {
-      create: jest.fn(),
-      findMany: jest.fn(),
-    },
-    workspaceMember: {
-      create: jest.fn(),
-    },
-    $transaction: jest.fn((cb) => cb(mockPrismaService)),
-  };
 
   beforeEach(async () => {
+    mockTransaction.mockImplementation(
+      (cb: (tx: typeof mockPrismaService) => Promise<unknown>) =>
+        cb(mockPrismaService),
+    );
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkspaceService,
@@ -31,7 +39,6 @@ describe('WorkspaceService', () => {
     }).compile();
 
     service = module.get<WorkspaceService>(WorkspaceService);
-    prisma = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {
@@ -40,17 +47,17 @@ describe('WorkspaceService', () => {
 
   describe('create', () => {
     it('should create workspace using organizationId in DTO if user is OWNER/ADMIN', async () => {
-      mockPrismaService.organizationMember.findUnique.mockResolvedValue({
+      mockOrgMember.findUnique.mockResolvedValue({
         organizationId: 'org-id-123',
         userId: 'user-id-456',
         role: 'OWNER',
       });
-      mockPrismaService.workspace.create.mockResolvedValue({
+      mockWorkspace.create.mockResolvedValue({
         id: 'workspace-id-789',
         name: 'My Workspace',
         organizationId: 'org-id-123',
       });
-      mockPrismaService.workspaceMember.create.mockResolvedValue({
+      mockWorkspaceMember.create.mockResolvedValue({
         id: 'member-id-abc',
         workspaceId: 'workspace-id-789',
         userId: 'user-id-456',
@@ -64,7 +71,7 @@ describe('WorkspaceService', () => {
 
       expect(result.workspace).toHaveProperty('id', 'workspace-id-789');
       expect(result.member).toHaveProperty('role', 'OWNER');
-      expect(mockPrismaService.organizationMember.findUnique).toHaveBeenCalledWith({
+      expect(mockOrgMember.findUnique).toHaveBeenCalledWith({
         where: {
           organizationId_userId: {
             organizationId: 'org-id-123',
@@ -72,19 +79,16 @@ describe('WorkspaceService', () => {
           },
         },
       });
-      expect(mockPrismaService.workspace.create).toHaveBeenCalledWith({
-        data: {
-          name: 'My Workspace',
-          organizationId: 'org-id-123',
-        },
+      expect(mockWorkspace.create).toHaveBeenCalledWith({
+        data: { name: 'My Workspace', organizationId: 'org-id-123' },
       });
     });
 
     it('should throw ForbiddenException if user is not OWNER/ADMIN for specified organizationId', async () => {
-      mockPrismaService.organizationMember.findUnique.mockResolvedValue({
+      mockOrgMember.findUnique.mockResolvedValue({
         organizationId: 'org-id-123',
         userId: 'user-id-456',
-        role: 'MEMBER', // Not owner/admin
+        role: 'MEMBER',
       });
 
       await expect(
@@ -96,17 +100,17 @@ describe('WorkspaceService', () => {
     });
 
     it('should find default organization if organizationId is not specified in DTO', async () => {
-      mockPrismaService.organizationMember.findFirst.mockResolvedValue({
+      mockOrgMember.findFirst.mockResolvedValue({
         organizationId: 'default-org-id',
         userId: 'user-id-456',
         role: 'OWNER',
       });
-      mockPrismaService.workspace.create.mockResolvedValue({
+      mockWorkspace.create.mockResolvedValue({
         id: 'workspace-id-789',
         name: 'Default Workspace',
         organizationId: 'default-org-id',
       });
-      mockPrismaService.workspaceMember.create.mockResolvedValue({
+      mockWorkspaceMember.create.mockResolvedValue({
         id: 'member-id-abc',
         workspaceId: 'workspace-id-789',
         userId: 'user-id-456',
@@ -117,8 +121,11 @@ describe('WorkspaceService', () => {
         name: 'Default Workspace',
       });
 
-      expect(result.workspace).toHaveProperty('organizationId', 'default-org-id');
-      expect(mockPrismaService.organizationMember.findFirst).toHaveBeenCalledWith({
+      expect(result.workspace).toHaveProperty(
+        'organizationId',
+        'default-org-id',
+      );
+      expect(mockOrgMember.findFirst).toHaveBeenCalledWith({
         where: {
           userId: 'user-id-456',
           role: { in: ['OWNER', 'ADMIN'] },
@@ -127,19 +134,17 @@ describe('WorkspaceService', () => {
     });
 
     it('should throw ForbiddenException if user is not OWNER/ADMIN of any organization and organizationId is not specified', async () => {
-      mockPrismaService.organizationMember.findFirst.mockResolvedValue(null);
+      mockOrgMember.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.create('user-id-456', {
-          name: 'Default Workspace',
-        }),
+        service.create('user-id-456', { name: 'Default Workspace' }),
       ).rejects.toThrow(ForbiddenException);
     });
   });
 
   describe('findAllForUserInOrg', () => {
     it('should throw ForbiddenException if user does not belong to the organization', async () => {
-      mockPrismaService.organizationMember.findUnique.mockResolvedValue(null);
+      mockOrgMember.findUnique.mockResolvedValue(null);
 
       await expect(
         service.findAllForUserInOrg('user-id-456', 'org-id-123'),
@@ -147,45 +152,50 @@ describe('WorkspaceService', () => {
     });
 
     it('should return all workspaces in organization if user is OWNER or ADMIN', async () => {
-      mockPrismaService.organizationMember.findUnique.mockResolvedValue({
+      mockOrgMember.findUnique.mockResolvedValue({
         organizationId: 'org-id-123',
         userId: 'user-id-456',
         role: 'OWNER',
       });
-      
-      const mockWorkspaces = [{ id: 'w-1', name: 'Work A' }, { id: 'w-2', name: 'Work B' }];
-      mockPrismaService.workspace.findMany.mockResolvedValue(mockWorkspaces);
 
-      const result = await service.findAllForUserInOrg('user-id-456', 'org-id-123');
+      const mockWorkspaces = [
+        { id: 'w-1', name: 'Work A' },
+        { id: 'w-2', name: 'Work B' },
+      ];
+      mockWorkspace.findMany.mockResolvedValue(mockWorkspaces);
+
+      const result = await service.findAllForUserInOrg(
+        'user-id-456',
+        'org-id-123',
+      );
 
       expect(result).toEqual(mockWorkspaces);
-      expect(mockPrismaService.workspace.findMany).toHaveBeenCalledWith({
+      expect(mockWorkspace.findMany).toHaveBeenCalledWith({
         where: { organizationId: 'org-id-123' },
         orderBy: { name: 'asc' },
       });
     });
 
     it('should return only joined workspaces if user is a standard MEMBER', async () => {
-      mockPrismaService.organizationMember.findUnique.mockResolvedValue({
+      mockOrgMember.findUnique.mockResolvedValue({
         organizationId: 'org-id-123',
         userId: 'user-id-456',
         role: 'MEMBER',
       });
-      
-      const mockWorkspaces = [{ id: 'w-1', name: 'Work A' }];
-      mockPrismaService.workspace.findMany.mockResolvedValue(mockWorkspaces);
 
-      const result = await service.findAllForUserInOrg('user-id-456', 'org-id-123');
+      const mockWorkspaces = [{ id: 'w-1', name: 'Work A' }];
+      mockWorkspace.findMany.mockResolvedValue(mockWorkspaces);
+
+      const result = await service.findAllForUserInOrg(
+        'user-id-456',
+        'org-id-123',
+      );
 
       expect(result).toEqual(mockWorkspaces);
-      expect(mockPrismaService.workspace.findMany).toHaveBeenCalledWith({
+      expect(mockWorkspace.findMany).toHaveBeenCalledWith({
         where: {
           organizationId: 'org-id-123',
-          members: {
-            some: {
-              userId: 'user-id-456',
-            },
-          },
+          members: { some: { userId: 'user-id-456' } },
         },
         orderBy: { name: 'asc' },
       });

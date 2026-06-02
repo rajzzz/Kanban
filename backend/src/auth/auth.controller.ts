@@ -1,4 +1,13 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Res, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Res,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as express from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -50,13 +59,16 @@ export class AuthController {
     // Extract refresh token from cookies manually
     let refreshToken: string | undefined;
     if (req.headers.cookie) {
-      const cookies = req.headers.cookie.split(';').reduce((acc, cookie) => {
-        const [key, ...valueParts] = cookie.trim().split('=');
-        if (key) {
-          acc[key] = valueParts.join('=');
-        }
-        return acc;
-      }, {} as Record<string, string>);
+      const cookies = req.headers.cookie.split(';').reduce(
+        (acc, cookie) => {
+          const [key, ...valueParts] = cookie.trim().split('=');
+          if (key) {
+            acc[key] = valueParts.join('=');
+          }
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
       refreshToken = cookies['refresh_token'];
     }
 

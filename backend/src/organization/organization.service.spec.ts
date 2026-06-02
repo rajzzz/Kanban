@@ -4,7 +4,6 @@ import { PrismaService } from '../prisma/prisma.service';
 
 describe('OrganizationService', () => {
   let service: OrganizationService;
-  let prisma: PrismaService;
 
   const mockPrismaService = {
     organizationMember: {
@@ -21,7 +20,6 @@ describe('OrganizationService', () => {
     }).compile();
 
     service = module.get<OrganizationService>(OrganizationService);
-    prisma = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {
@@ -30,27 +28,24 @@ describe('OrganizationService', () => {
 
   describe('findAllForUser', () => {
     it('should return mapped organizations for user', async () => {
+      const joinedAt = new Date();
       const mockMemberships = [
         {
           id: 'mem-1',
           role: 'OWNER',
-          joinedAt: new Date(),
-          organization: {
-            id: 'org-1',
-            name: 'Org A',
-          },
+          joinedAt,
+          organization: { id: 'org-1', name: 'Org A' },
         },
         {
           id: 'mem-2',
           role: 'MEMBER',
-          joinedAt: new Date(),
-          organization: {
-            id: 'org-2',
-            name: 'Org B',
-          },
+          joinedAt,
+          organization: { id: 'org-2', name: 'Org B' },
         },
       ];
-      mockPrismaService.organizationMember.findMany.mockResolvedValue(mockMemberships);
+      mockPrismaService.organizationMember.findMany.mockResolvedValue(
+        mockMemberships,
+      );
 
       const result = await service.findAllForUser('user-id-123');
 
@@ -59,9 +54,11 @@ describe('OrganizationService', () => {
         id: 'org-1',
         name: 'Org A',
         role: 'OWNER',
-        joinedAt: mockMemberships[0].joinedAt,
+        joinedAt,
       });
-      expect(mockPrismaService.organizationMember.findMany).toHaveBeenCalledWith({
+      expect(
+        mockPrismaService.organizationMember.findMany,
+      ).toHaveBeenCalledWith({
         where: { userId: 'user-id-123' },
         include: { organization: true },
         orderBy: { organization: { name: 'asc' } },
