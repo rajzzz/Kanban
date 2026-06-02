@@ -1,10 +1,17 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
+import { randomUUID, createHmac } from 'crypto';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { InviteUserDto } from './dto/invite-user.dto';
+import { getAccessTokenSecret } from '../auth/auth-token.config';
 
 @Injectable()
 export class WorkspaceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async create(userId: string, dto: CreateWorkspaceDto) {
     let orgId = dto.organizationId;
@@ -127,5 +134,51 @@ export class WorkspaceService {
         name: 'asc',
       },
     });
+  }
+
+  async inviteUser(userId: string, dto: InviteUserDto) {
+    const { workspaceId, email, role } = dto;
+
+    // 1. Generate a random prefix for the invite token
+    const tokenPrefix = randomUUID().replace(/-/g, '').slice(0, 10);
+
+    // 2. Sign a JWT payload containing workspaceId and inviteeEmail, expiring in 24 hours
+    const invitePayload = {
+      workspaceId,
+      inviteeEmail: email,
+    };
+    const signedJwt = await this.jwtService.signAsync(invitePayload, {
+      secret: getAccessTokenSecret(),
+      expiresIn: '24h',
+    });
+
+    const inviteToken = `${tokenPrefix}.${signedJwt}`;
+
+    // 3. Hash the invite token using HMAC-SHA256 (reusing getAccessTokenSecret for key)
+    const tokenHash = createHmac('sha256', getAccessTokenSecret())
+      .update(inviteToken)
+      .digest('hex');
+
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // 4. Save invite record in database
+    const invite = await this.prisma.workspaceInvite.create({
+      data: {
+        email,
+        role: role ?? 'MEMBER',
+        tokenHash,
+        tokenPrefix,
+        expiresAt,
+        status: 'PENDING',
+        workspaceId,
+        invitedById: userId,
+      },
+    });
+
+    // In production, we'd email the token. For this task, return it in the response.
+    return {
+      token: inviteToken,
+      invite,
+    };
   }
 }

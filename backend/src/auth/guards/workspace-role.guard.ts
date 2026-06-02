@@ -27,12 +27,19 @@ export class WorkspaceRoleGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
-    // 1. Read workspaceId from route params
+    // 1. Read workspaceId from route params or request body
     const params = request.params as Record<string, string | undefined>;
-    const workspaceId = params?.workspaceId;
+    let workspaceId = params?.workspaceId;
+    if (!workspaceId && request.body) {
+      const body = request.body as Record<string, unknown>;
+      if (typeof body.workspaceId === 'string') {
+        workspaceId = body.workspaceId;
+      }
+    }
+
     if (!workspaceId) {
       throw new BadRequestException(
-        'workspaceId is missing from route parameters',
+        'workspaceId is missing from route parameters or request body',
       );
     }
 

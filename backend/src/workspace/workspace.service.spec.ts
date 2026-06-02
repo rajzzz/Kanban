@@ -1,7 +1,10 @@
+/* eslint-disable @typescript-eslint/unbound-method */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { WorkspaceService } from './workspace.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ForbiddenException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 
 // Typed mock helpers — extracted so ESLint sees them as jest.Mock, not `any` members
 const mockOrgMember = {
@@ -13,28 +16,37 @@ const mockWorkspace = {
   findMany: jest.fn(),
 };
 const mockWorkspaceMember = { create: jest.fn() };
+const mockWorkspaceInvite = { create: jest.fn() };
 const mockTransaction = jest.fn();
 
 const mockPrismaService = {
   organizationMember: mockOrgMember,
   workspace: mockWorkspace,
   workspaceMember: mockWorkspaceMember,
+  workspaceInvite: mockWorkspaceInvite,
   $transaction: mockTransaction,
 };
 
 describe('WorkspaceService', () => {
   let service: WorkspaceService;
+  let mockJwtService: jest.Mocked<JwtService>;
 
   beforeEach(async () => {
+    process.env.JWT_SECRET = 'test-secret';
     mockTransaction.mockImplementation(
       (cb: (tx: typeof mockPrismaService) => Promise<unknown>) =>
         cb(mockPrismaService),
     );
 
+    mockJwtService = {
+      signAsync: jest.fn().mockResolvedValue('mocked-signed-jwt'),
+    } as unknown as jest.Mocked<JwtService>;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkspaceService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: JwtService, useValue: mockJwtService },
       ],
     }).compile();
 
@@ -234,6 +246,50 @@ describe('WorkspaceService', () => {
           members: { some: { userId: 'user-id-456' } },
         },
         orderBy: { name: 'asc' },
+      });
+    });
+  });
+
+  describe('inviteUser', () => {
+    it('should generate a token, save hashed invite to DB, and return token', async () => {
+      const mockInviteRecord = {
+        id: 'invite-id-uuid',
+        email: 'invitee@example.com',
+        role: 'MEMBER',
+        tokenHash: 'some-hmac-sha256-hash',
+        tokenPrefix: 'abc123xyz8',
+        expiresAt: new Date(),
+        status: 'PENDING',
+        workspaceId: 'ws-123',
+        invitedById: 'user-456',
+      };
+      mockWorkspaceInvite.create.mockResolvedValue(mockInviteRecord);
+
+      const result = await service.inviteUser('user-456', {
+        workspaceId: 'ws-123',
+        email: 'invitee@example.com',
+        role: 'MEMBER',
+      });
+
+      expect(result.token).toContain('mocked-signed-jwt');
+      expect(result.invite).toEqual(mockInviteRecord);
+      expect(mockJwtService.signAsync).toHaveBeenCalledWith(
+        {
+          workspaceId: 'ws-123',
+          inviteeEmail: 'invitee@example.com',
+        },
+        expect.objectContaining({
+          expiresIn: '24h',
+        }),
+      );
+      expect(mockWorkspaceInvite.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          email: 'invitee@example.com',
+          role: 'MEMBER',
+          workspaceId: 'ws-123',
+          invitedById: 'user-456',
+          status: 'PENDING',
+        }),
       });
     });
   });

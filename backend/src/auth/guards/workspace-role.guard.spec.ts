@@ -33,6 +33,7 @@ describe('WorkspaceRoleGuard', () => {
   function createMockContext(
     params: Record<string, string | undefined>,
     user?: { userId: string } | null,
+    body?: Record<string, unknown>,
   ): ExecutionContext {
     return {
       getHandler: jest.fn(),
@@ -41,16 +42,40 @@ describe('WorkspaceRoleGuard', () => {
         getRequest: jest.fn().mockReturnValue({
           params,
           user,
+          body,
         }),
       }),
     } as unknown as ExecutionContext;
   }
 
-  it('should throw BadRequestException if workspaceId is missing from route params', async () => {
+  it('should throw BadRequestException if workspaceId is missing from route params and request body', async () => {
     const context = createMockContext({});
     await expect(guard.canActivate(context)).rejects.toThrow(
-      new BadRequestException('workspaceId is missing from route parameters'),
+      new BadRequestException(
+        'workspaceId is missing from route parameters or request body',
+      ),
     );
+  });
+
+  it('should resolve workspaceId from request body if missing from route params', async () => {
+    const context = createMockContext(
+      {},
+      { userId: 'user-456' },
+      { workspaceId: 'ws-123' },
+    );
+    jest.spyOn(prisma.workspaceMember, 'findUnique').mockResolvedValue({
+      id: 'member-789',
+      workspaceId: 'ws-123',
+      userId: 'user-456',
+      role: 'MEMBER',
+      joinedAt: new Date(),
+      workspace: { id: 'ws-123', name: 'WS' } as any,
+    } as any);
+
+    reflector.getAllAndOverride.mockReturnValue(undefined);
+
+    const result = await guard.canActivate(context);
+    expect(result).toBe(true);
   });
 
   it('should throw ForbiddenException if user is not authenticated', async () => {
