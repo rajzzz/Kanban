@@ -66,6 +66,7 @@ export default function DashboardClient() {
 
   const dispatch = useAppDispatch();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [generatingInvite, setGeneratingInvite] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -74,13 +75,14 @@ export default function DashboardClient() {
   const activeProject = projects.find((p) => p.id === selectedProjectId);
 
   const handleGenerateInvite = async () => {
-    if (!selectedWorkspaceId) return;
+    if (!selectedWorkspaceId || !inviteEmail.trim()) return;
     setGeneratingInvite(true);
     setInviteToken(null);
     setCopied(false);
     try {
-      const res = await workspaceApi.generateInvite(selectedWorkspaceId);
+      const res = await workspaceApi.generateInvite(selectedWorkspaceId, inviteEmail.trim());
       setInviteToken(res.data.token);
+      setInviteEmail("");
     } catch (err) {
       console.error("Failed to generate invite token", err);
     } finally {
@@ -333,16 +335,31 @@ export default function DashboardClient() {
                   <button onClick={handleCopyInviteLink} className="btn-primary" style={{ width: "100%", padding: "0.5rem 0", fontSize: "0.8125rem" }}>
                     {copied ? "Copied!" : "Copy Invite Link"}
                   </button>
+                  <button onClick={() => setInviteToken(null)} className="px-4 py-1.5 text-xs text-gray-400 bg-gray-800 rounded-md hover:bg-gray-700 hover:text-white" style={{ border: "1px solid var(--border-default)", cursor: "pointer", width: "100%" }}>
+                    Create Another Invite
+                  </button>
                 </div>
               ) : (
-                <button
-                  onClick={handleGenerateInvite}
-                  disabled={generatingInvite}
-                  className="btn-primary"
-                  style={{ width: "100%", padding: "0.5rem 0", fontSize: "0.8125rem" }}
-                >
-                  {generatingInvite ? "Generating..." : "Generate Invite Link"}
-                </button>
+                <form onSubmit={(e) => { e.preventDefault(); handleGenerateInvite(); }} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="teammate@company.com"
+                    required
+                    className="input-field"
+                    style={{ fontSize: "0.8125rem", padding: "0.5rem 0.75rem" }}
+                    disabled={generatingInvite}
+                  />
+                  <button
+                    type="submit"
+                    disabled={generatingInvite || !inviteEmail.trim()}
+                    className="btn-primary"
+                    style={{ width: "100%", padding: "0.5rem 0", fontSize: "0.8125rem" }}
+                  >
+                    {generatingInvite ? "Generating..." : "Generate Invite Link"}
+                  </button>
+                </form>
               )}
             </div>
 

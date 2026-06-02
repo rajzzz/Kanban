@@ -172,8 +172,8 @@ export const workspaceApi = {
   getMine: () => apiClient.get<unknown[]>("/workspaces/me"),
   list: (organizationId: string) =>
     apiClient.get<Workspace[]>(`/workspaces?organizationId=${organizationId}`),
-  generateInvite: (workspaceId: string) =>
-    apiClient.post<{ token: string }>(`/workspaces/invite`, { workspaceId }),
+  generateInvite: (workspaceId: string, email: string) =>
+    apiClient.post<{ token: string }>(`/workspaces/invite`, { workspaceId, email }),
   acceptInvite: (token: string) =>
     apiClient.post("/workspaces/invite/accept", { token }),
   listMembers: (workspaceId: string) =>
