@@ -388,6 +388,30 @@ describe('WorkspaceService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
+    it('should throw ForbiddenException when caller email does not match invite email', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({
+        workspaceId: 'ws-1',
+        inviteeEmail: 'alice@test.com',
+      });
+      mockWorkspaceInvite.findFirst.mockResolvedValue({
+        id: 'inv-1',
+        status: 'PENDING',
+        workspaceId: 'ws-1',
+        role: WorkspaceRole.MEMBER,
+        expiresAt: FUTURE_DATE,
+        workspace: { organizationId: 'org-1' },
+      });
+      // Bob is logged in but the invite was for Alice
+      mockUser.findUnique.mockResolvedValue({
+        id: 'bob-id',
+        email: 'bob@test.com',
+      });
+
+      await expect(
+        service.acceptInvite('bob-id', { token: VALID_TOKEN }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
     it('should create membership and mark invite ACCEPTED atomically', async () => {
       mockJwtService.verifyAsync.mockResolvedValue({
         workspaceId: 'ws-1',
@@ -403,7 +427,11 @@ describe('WorkspaceService', () => {
           organizationId: 'org-1',
         },
       });
-      mockUser.findUnique.mockResolvedValue({ id: 'user-abc' });
+      // Caller is authenticated as the invited user — emails match
+      mockUser.findUnique.mockResolvedValue({
+        id: 'user-abc',
+        email: 'invitee@test.com',
+      });
       mockWorkspaceMember.findUnique.mockResolvedValue(null); // not already a member
       mockOrgMember.findUnique.mockResolvedValue(null); // not already an org member
       mockOrgMember.create.mockResolvedValue({
@@ -470,7 +498,11 @@ describe('WorkspaceService', () => {
           organizationId: 'org-1',
         },
       });
-      mockUser.findUnique.mockResolvedValue({ id: 'user-abc' });
+      // Caller's email matches the invite
+      mockUser.findUnique.mockResolvedValue({
+        id: 'user-abc',
+        email: 'invitee@test.com',
+      });
       mockWorkspaceMember.findUnique.mockResolvedValue(null);
       mockOrgMember.findUnique.mockResolvedValue({
         organizationId: 'org-1',
@@ -518,7 +550,7 @@ describe('WorkspaceService', () => {
           organizationId: 'org-1',
         },
       });
-      mockUser.findUnique.mockResolvedValue({ id: 'user-abc' });
+      mockUser.findUnique.mockResolvedValue({ id: 'user-abc', email: 'invitee@test.com' });
       mockWorkspaceMember.findUnique.mockResolvedValue({
         workspaceId: 'ws-1',
         userId: 'user-abc',

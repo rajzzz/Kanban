@@ -259,12 +259,23 @@ export class WorkspaceService {
       throw new BadRequestException('Invite token has expired');
     }
 
-    // 4. Resolve the userId whose email matches, or use the authenticated user
-    const inviteeUser = await this.prisma.user.findUnique({
-      where: { email: payload.inviteeEmail },
+    // 4. Verify the authenticated user owns the invited email address.
+    // This prevents a third party from consuming someone else's invite token.
+    const callerUser = await this.prisma.user.findUnique({
+      where: { id: userId },
     });
 
-    const memberId = inviteeUser?.id ?? userId;
+    if (!callerUser) {
+      throw new BadRequestException('Authenticated user not found');
+    }
+
+    if (callerUser.email !== payload.inviteeEmail) {
+      throw new ForbiddenException(
+        'This invite was issued to a different email address',
+      );
+    }
+
+    const memberId = callerUser.id;
 
     // 5. Atomic transaction: create membership + mark invite ACCEPTED
     return this.prisma.$transaction(async (tx) => {

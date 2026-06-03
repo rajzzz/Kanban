@@ -21,7 +21,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { WorkspaceRoleGuard } from '../auth/guards/workspace-role.guard';
 import { Roles, Role } from '../auth/decorators/roles.decorator';
-import { Public } from '../auth/decorators/public.decorator';
+
 import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Workspaces')
@@ -80,17 +80,19 @@ export class WorkspaceController {
     return this.workspaceService.inviteUser(user.userId, dto);
   }
 
-  /** Accept a workspace invite — public so non-members can redeem tokens */
+  /**
+   * Accept a workspace invite.
+   * Requires authentication — the caller must be logged in.
+   * The service verifies the authenticated user's email matches the invite's
+   * target email, preventing a third party from consuming someone else's invite.
+   */
   @Post('invite/accept')
-  @Public()
   @HttpCode(HttpStatus.OK)
   async acceptInvite(
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: AcceptInviteDto,
   ) {
-    // user may be undefined if truly public; pass userId if present
-    const userId = user?.userId ?? '';
-    return this.workspaceService.acceptInvite(userId, dto);
+    return this.workspaceService.acceptInvite(user.userId, dto);
   }
 
   // ─────────────────────────────────────────────────────────
